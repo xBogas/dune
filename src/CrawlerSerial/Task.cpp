@@ -45,41 +45,48 @@ namespace CrawlerSerial
   {
     //! Serial port
     std::string path_port;
-    //! 
+    //!
     unsigned baud_rate;
-    //! 
+    //!
     unsigned timeout;
   };
-  
-  struct Task: public DUNE::Tasks::Task
+
+  struct Task : public DUNE::Tasks::Task
   {
     //! Serial port handle
-    SerialPort* m_port;
+    SerialPort *m_uart;
+    //! I/O Multiplexer
+    Poll m_poll;
     //! Bom nome
-    DriverCrawlerSerial* m_driver;
+    DriverCrawlerSerial *m_driver;
     //! Timer
-    Counter<double> m_timer;
+    Counter<double> m_wdog;
+    //! Read timestamp.
+    double m_tstamp;
+    //! IMC msg
+    IMC::Pressure m_press;
     //! Task arguments
     Arguments m_args;
-
 
     //! Constructor.
     //! @param[in] name task name.
     //! @param[in] ctx context.
-    Task(const std::string& name, Tasks::Context& ctx):
-      DUNE::Tasks::Task(name, ctx),
+    Task(const std::string &name, Tasks::Context &ctx) : DUNE::Tasks::Task(name, ctx),
+      m_uart(nullptr),
       m_driver(nullptr)
     {
       param("Serial Port - Device", m_args.path_port)
-      .defaultValue("")
-      .description("Serial port device");
+          .defaultValue("")
+          .description("Serial port device");
 
       param("Serial Port - Baud Rate", m_args.baud_rate)
-      .defaultValue("")
-      .description("Serial port baud rate");
+          .defaultValue("")
+          .description("Serial port baud rate");
 
       param("Input timeout", m_args.timeout)
-      .description("Amount of seconds to wait for data");
+          .description("Amount of seconds to wait for data");
+
+      bind<IMC::PWM>(this);
     }
 
     //! Update internal state with new parameter values.
@@ -104,18 +111,19 @@ namespace CrawlerSerial
     void
     onResourceAcquisition(void)
     {
+      setEntityState(IMC::EntityState::ESTA_BOOT, Status::CODE_INIT);
       try
       {
-        m_port = new SerialPort(m_args.path_port, m_args.baud_rate);
-        m_port->setCanonicalInput(true);
-        m_port->flush();
-        m_driver = new DriverCrawlerSerial(this, m_port);
+        m_uart = new SerialPort(m_args.path_port, m_args.baud_rate);
+        m_uart->setCanonicalInput(true);
+        m_uart->flush();
+        m_poll.add(*m_uart);
+        m_driver = new DriverCrawlerSerial(this, m_uart, m_poll);
       }
-      catch(const std::runtime_error& e)
+      catch (const std::runtime_error &e)
       {
         throw RestartNeeded(e.what(), 10);
       }
-      
     }
 
     //! Initialize resources.
@@ -123,41 +131,41 @@ namespace CrawlerSerial
     onResourceInitialization(void)
     {
       m_driver->stop();
-      m_port->flush();
-      initBoard();
+      m_uart->flush();
+      Delay::wait(4.0F);
+      m_driver->start();
+      m_wdog.setTop(m_args.timeout);
+      m_wdog.reset();
     }
 
     //! Release resources.
     void
     onResourceRelease(void)
     {
-      m_driver->stop();
-      Memory::clear(m_driver);
-      Memory::clear(m_port);
+      if (m_uart != nullptr)
+      {
+        m_poll.remove(*m_uart);
+        Memory::clear(m_driver);
+        Memory::clear(m_uart);
+      }
     }
 
     void
-    initBoard()
+    consume(const IMC::PWM* msg)
     {
-      /*
-      if (!m_driver->init(0, 0))
-      {
-        m_driver->reset();
-        throw RestartNeeded(DTR("failed to init Board"), 10, true);
-      }
-      */
-      
-      m_driver->start();
-
-      inf("Init and Start OK");
-      m_timer.setTop(m_args.timeout);
-      m_timer.reset();
+      std::string send = String::str("@PWM,%u,%u", msg->period, msg->duty_cycle);
+      m_driver->sendCommand(send.c_str(),"$RSP,ACK,,*");
     }
 
     void
     dispatchData()
     {
+      m_tstamp = Clock::getSinceEpoch();
 
+      m_press.setTimeStamp(m_tstamp);
+      m_press.value = m_driver->m_boardData.pressure;
+      dispatch(m_press, DF_KEEP_TIME);
+      inf("Send IMC::Pressure msg: %f", m_press.value);
     }
 
     //! Main loop.
@@ -166,22 +174,22 @@ namespace CrawlerSerial
     {
       while (!stopping())
       {
-        if (m_timer.overflow())
+        waitForMessages(0.01);
+
+        if (m_wdog.overflow())
         {
           inf("Timer overflow");
           throw RestartNeeded(DTR(Status::getString(CODE_COM_ERROR)), 10);
         }
-        
-        if (!Poll::poll(*m_port, m_args.timeout))
+
+        if (!Poll::poll(*m_uart, m_args.timeout))
           continue;
-        
+
         if (m_driver->newData())
         {
           dispatchData();
-          m_timer.reset();
+          m_wdog.reset();
         }
-        
-        waitForMessages(1.0);
       }
     }
   };
