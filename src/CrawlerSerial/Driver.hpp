@@ -9,120 +9,149 @@ namespace CrawlerSerial
   class DriverCrawlerSerial
   {
   public:
-    struct Data
+    struct CrawlerData
     {
+      std::string firmVersion;
       float pressure;
 
-      std::string firmware;
+      bool state_new_data[1];
     };
-    
-    DriverCrawlerSerial(DUNE::Tasks::Task* task, SerialPort* port, Poll poll):
-      m_task(task), m_port(port)
+
+    SerialPort *m_uart;
+    Poll m_poll;
+
+    DriverCrawlerSerial(DUNE::Tasks::Task *task, SerialPort *uart, Poll poll) : m_task(task)
     {
+      m_uart = uart;
       m_poll = poll;
-      m_timeout = 2.0f;
+      m_timeout_uart = 1.0f;
+      resetStateNewData();
     }
 
-    ~DriverCrawlerSerial(){}
+    ~DriverCrawlerSerial() {}
+
+    void
+    resetStateNewData(void)
+    {
+      for (uint8_t t = 0; t < 1; t++)
+        m_crawlerData.state_new_data[t] = false;
+    }
 
     bool
     getVersionFirmware()
     {
-      if(!sendCommand("@VERS,*", "$VERS,"))
+      if (!sendCommand("@VERS,*", "$VERS,"))
         return true;
 
       return false;
     }
 
-    void
-    start()
+    bool
+    startAcquisition()
     {
-      if (!sendCommand("@START,*", "$RSP,ACK,"))
-        throw std::runtime_error("Failed to send START message");
-    }
+      if (sendCommand("@START,*", "$RSP,ACK,,*"))
+        return true;
 
-    void
-    stop()
-    {
-      if(!sendCommand("@STOP,*", "$STOP"))
-        throw std::runtime_error("Failed to send STOP message");
+      return false;
     }
 
     bool
-    newData()
+    stopAcquisition()
     {
-      unsigned int bytes = m_port->readString(buff, sizeof(buff));// if bytes == sizeof(buff) !!
+      if (!sendCommand("@STOP,*", ""))
+        return true;
 
-      if (bytes == 0)
+      return false;
+    }
+
+    bool
+    haveNewData()
+    {
+      std::size_t rv = m_uart->readString(bfr, sizeof(bfr));
+
+      if (rv == 0)
       {
-        m_task->inf("No bytes to read");
+        m_task->err(DTR("I/O error"));
         return false;
       }
-      
-      m_task->inf("New data: %s", buff);
-      char* param = std::strtok(buff, ",");
+
+      bfr[strlen(bfr) - 3] = '\0';
+
+      m_task->inf("New data: %s", bfr);
+
+      char *param = std::strtok(bfr, ",");
       if (std::strcmp(param, "$PRESS") == 0) // $PRESS,fp value\0
       {
         param = std::strtok(NULL, ",");
-        std::sscanf(param, "%f", &m_boardData.pressure);
+        std::sscanf(param, "%f", &m_crawlerData.pressure);
+        m_task->debug("Pressure: %f mBar", m_crawlerData.pressure);
+        m_crawlerData.state_new_data[0] = true;
       }
-      
-      return true;
+
+      bool result = true;
+      for (uint8_t t = 0; t < 1; t++)
+      {
+        if (m_crawlerData.state_new_data[t] == false)
+          result = false;
+      }
+
+      return result;
     }
 
     void
-    sendCommandNoRsp(const char* cmd)
+    sendCommandNoRsp(const char *cmd)
     {
       char cmdText[32];
-      std::sprintf(cmdText, "%s%c\n", cmd, (Algorithms::XORChecksum::compute((uint8_t*)cmd, strlen(cmd) - 1) | 0x80));
+      std::sprintf(cmdText, "%s%c\n", cmd, (Algorithms::XORChecksum::compute((uint8_t *)cmd, strlen(cmd) - 1) | 0x80));
       m_task->inf("Command (no rsp): %s", cmdText);
-      size_t n = m_port->writeString(cmdText);
-      m_task->inf("Send %lu", n);
+      m_uart->writeString(cmdText);
     }
 
     bool
-    sendCommand(const char* send, const char* reply)
+    sendCommand(const char *send, const char *reply)
     {
       char cmdText[32];
       char cmdReplyText[32];
-      std::sprintf(cmdText, "%s%c\n", send, (Algorithms::XORChecksum::compute((uint8_t*)send, strlen(send) - 1) | 0x80));
-      //std::sprintf(cmdReplyText, "%s%c\n", reply, (Algorithms::XORChecksum::compute((uint8_t*)reply, strlen(reply) - 1) | 0x80));
-      std::sprintf(cmdReplyText, "%s\n", reply);      
+      std::sprintf(cmdText, "%s%c\n", send, (Algorithms::XORChecksum::compute((uint8_t *)send, strlen(send) - 1) | 0x80));
+      std::sprintf(cmdReplyText, "%s%c\n", reply, (Algorithms::XORChecksum::compute((uint8_t *)reply, strlen(reply) - 1) | 0x80));
       char bfrUart[128];
-      m_task->inf("Command: %s", cmdText);
-      m_task->inf("Reply should be %s", cmdReplyText);
-      m_port->writeString(cmdText);
+      m_task->spew("Command: %s", cmdText);
+      m_uart->writeString(cmdText);
 
-      if (Poll::poll(*m_port, m_timeout))
+      if (Poll::poll(*m_uart, m_timeout_uart))
       {
-        m_port->readString(bfrUart, sizeof(bfrUart));
-        m_task->inf("Reply: %s", bfrUart);
+        m_uart->readString(bfrUart, sizeof(bfrUart));
+        m_task->spew("Reply: %s", bfrUart);
         if (std::strcmp(bfrUart, cmdReplyText) == 0)
         {
           return true;
         }
-        else if(std::strcmp(reply, "$VERS,") == 0)
+        else if (std::strcmp(reply, "$VERS,") == 0)
         {
-          char* vrs = std::strtok(bfrUart, ",");
+          char *vrs = std::strtok(bfrUart, ",");
           vrs = std::strtok(NULL, ",");
-          m_boardData.firmware = vrs;
+          m_crawlerData.firmVersion = vrs;
           return true;
         }
       }
+
       return false;
     }
 
-    Data m_boardData;
+    std::string
+    getFirmwareVersion(void)
+    {
+      return m_crawlerData.firmVersion;
+    }
+
+    CrawlerData m_crawlerData;
+
   private:
-
-    DUNE::Tasks::Task* m_task;
-    SerialPort* m_port;
-    Poll m_poll;
-    float m_timeout;
-    char buff[64];
+    DUNE::Tasks::Task *m_task;
+    float m_timeout_uart;
+    char bfr[64];
   };
-  
-}
 
+}
 
 #endif

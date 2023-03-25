@@ -43,12 +43,14 @@ namespace CrawlerSerial
 
   struct Arguments
   {
-    //! Serial port
-    std::string path_port;
-    //!
-    unsigned baud_rate;
-    //!
-    unsigned timeout;
+    //! Serial port device.
+    std::string uart_dev;
+    //! Serial port baud rate.
+    unsigned uart_baud;
+    //! Input timeout.
+    double input_timeout;
+    //! Number of attempts before error
+    int number_attempts;
   };
 
   struct Task : public DUNE::Tasks::Task
@@ -57,34 +59,43 @@ namespace CrawlerSerial
     SerialPort *m_uart;
     //! I/O Multiplexer
     Poll m_poll;
-    //! Bom nome
+    //! Task arguments
+    Arguments m_args;
+    //! Driver for CrawlerSerial
     DriverCrawlerSerial *m_driver;
     //! Timer
     Counter<double> m_wdog;
-    //! Read timestamp.
-    double m_tstamp;
     //! IMC msg
     IMC::Pressure m_press;
-    //! Task arguments
-    Arguments m_args;
+    //! Read timestamp.
+    double m_tstamp;
+    //! Count for attempts
+    int m_count_attempts;
+    //! Flag to control reset of board
+    bool m_is_first_reset;
 
     //! Constructor.
     //! @param[in] name task name.
     //! @param[in] ctx context.
     Task(const std::string &name, Tasks::Context &ctx) : DUNE::Tasks::Task(name, ctx),
-      m_uart(nullptr),
-      m_driver(nullptr)
+                                                         m_uart(NULL),
+                                                         m_driver(0),
+                                                         m_tstamp(0)
     {
-      param("Serial Port - Device", m_args.path_port)
+      param("Serial Port - Device", m_args.uart_dev)
           .defaultValue("")
           .description("Serial port device");
 
-      param("Serial Port - Baud Rate", m_args.baud_rate)
+      param("Serial Port - Baud Rate", m_args.uart_baud)
           .defaultValue("")
           .description("Serial port baud rate");
 
-      param("Input timeout", m_args.timeout)
-          .description("Amount of seconds to wait for data");
+      param("Input Timeout", m_args.input_timeout)
+          .defaultValue("3.0")
+          .minimumValue("2.0")
+          .maximumValue("4.0")
+          .units(Units::Second)
+          .description("Amount of seconds to wait for data before reporting an error");
 
       bind<IMC::PWM>(this);
     }
@@ -114,7 +125,7 @@ namespace CrawlerSerial
       setEntityState(IMC::EntityState::ESTA_BOOT, Status::CODE_INIT);
       try
       {
-        m_uart = new SerialPort(m_args.path_port, m_args.baud_rate);
+        m_uart = new SerialPort(m_args.uart_dev, m_args.uart_baud);
         m_uart->setCanonicalInput(true);
         m_uart->flush();
         m_poll.add(*m_uart);
@@ -130,11 +141,11 @@ namespace CrawlerSerial
     void
     onResourceInitialization(void)
     {
-      m_driver->stop();
+      m_driver->stopAcquisition();
       m_uart->flush();
       Delay::wait(4.0F);
-      m_driver->start();
-      m_wdog.setTop(m_args.timeout);
+      initBoard(false);
+      m_wdog.setTop(m_args.input_timeout);
       m_wdog.reset();
     }
 
@@ -151,10 +162,45 @@ namespace CrawlerSerial
     }
 
     void
-    consume(const IMC::PWM* msg)
+    initBoard(bool noRestart)
+    {
+      inf("ola");
+      if (!m_driver->getVersionFirmware())
+      {
+        setEntityState(IMC::EntityState::ESTA_NORMAL, Utils::String::str(DTR("trying connecting to board")));
+        war(DTR("failed to get firmware version"));
+      }
+      else
+      {
+        inf("Firmware Version: %s", m_driver->getFirmwareVersion().c_str());
+      }
+
+      if (!m_driver->startAcquisition())
+      {
+        if (!noRestart)
+        {
+          m_driver->sendCommandNoRsp("@RESET,*");
+          Delay::wait(1.0);
+          throw RestartNeeded(DTR("failed to start acquisition"), 10, true);
+        }
+        else
+        {
+          setEntityState(IMC::EntityState::ESTA_NORMAL, Utils::String::str(DTR("trying connecting to board")));
+          war(DTR("failed to start acquisition"));
+          return;
+        }
+      }
+
+      debug("Init and Start OK");
+      m_wdog.setTop(m_args.input_timeout);
+      m_wdog.reset();
+    }
+
+    void
+    consume(const IMC::PWM *msg)
     {
       std::string send = String::str("@PWM,%u,%u", msg->period, msg->duty_cycle);
-      m_driver->sendCommand(send.c_str(),"$RSP,ACK,,*");
+      m_driver->sendCommand(send.c_str(), "$RSP,ACK,,*");
     }
 
     void
@@ -163,7 +209,7 @@ namespace CrawlerSerial
       m_tstamp = Clock::getSinceEpoch();
 
       m_press.setTimeStamp(m_tstamp);
-      m_press.value = m_driver->m_boardData.pressure;
+      m_press.value = m_driver->m_crawlerData.pressure;
       dispatch(m_press, DF_KEEP_TIME);
       inf("Send IMC::Pressure msg: %f", m_press.value);
     }
@@ -182,10 +228,10 @@ namespace CrawlerSerial
           throw RestartNeeded(DTR(Status::getString(CODE_COM_ERROR)), 10);
         }
 
-        if (!Poll::poll(*m_uart, m_args.timeout))
+        if (!Poll::poll(*m_uart, m_args.input_timeout))
           continue;
 
-        if (m_driver->newData())
+        if (m_driver->haveNewData())
         {
           dispatchData();
           m_wdog.reset();
