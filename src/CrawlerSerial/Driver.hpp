@@ -40,7 +40,7 @@ namespace CrawlerSerial
     bool
     getVersionFirmware()
     {
-      if (!sendCommand("@VERS,*", "$VERS,"))
+      if (!sendCommand("@VERS,*", "$VERS,0.0.0,*"))
         return true;
 
       return false;
@@ -49,7 +49,7 @@ namespace CrawlerSerial
     bool
     startAcquisition()
     {
-      if (sendCommand("@START,*", "$RSP,ACK,,*"))
+      if (!sendCommand("@START,*", "$RSP,ACK,*"))
         return true;
 
       return false;
@@ -58,7 +58,7 @@ namespace CrawlerSerial
     bool
     stopAcquisition()
     {
-      if (!sendCommand("@STOP,*", ""))
+      if (!sendCommand("@STOP,*", "$STOP,*"))
         return true;
 
       return false;
@@ -76,8 +76,6 @@ namespace CrawlerSerial
       }
 
       bfr[strlen(bfr) - 3] = '\0';
-
-      m_task->inf("New data: %s", bfr);
 
       char *param = std::strtok(bfr, ",");
       if (std::strcmp(param, "$PRESS") == 0) // $PRESS,fp value\0
@@ -103,6 +101,7 @@ namespace CrawlerSerial
     {
       char cmdText[32];
       std::sprintf(cmdText, "%s%c\n", cmd, (Algorithms::XORChecksum::compute((uint8_t *)cmd, strlen(cmd) - 1) | 0x80));
+      //std::sprintf(cmdText, "%s\n", cmd);
       m_task->inf("Command (no rsp): %s", cmdText);
       m_uart->writeString(cmdText);
     }
@@ -114,8 +113,10 @@ namespace CrawlerSerial
       char cmdReplyText[32];
       std::sprintf(cmdText, "%s%c\n", send, (Algorithms::XORChecksum::compute((uint8_t *)send, strlen(send) - 1) | 0x80));
       std::sprintf(cmdReplyText, "%s%c\n", reply, (Algorithms::XORChecksum::compute((uint8_t *)reply, strlen(reply) - 1) | 0x80));
+      /* std::sprintf(cmdText, "%s\n", send);
+      std::sprintf(cmdReplyText, "%s\n", reply); */
       char bfrUart[128];
-      m_task->spew("Command: %s", cmdText);
+      m_task->inf("Command: %s", cmdText);
       m_uart->writeString(cmdText);
 
       if (Poll::poll(*m_uart, m_timeout_uart))

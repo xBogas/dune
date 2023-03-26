@@ -144,7 +144,7 @@ namespace CrawlerSerial
       m_driver->stopAcquisition();
       m_uart->flush();
       Delay::wait(4.0F);
-      initBoard(false);
+      initBoard(true);
       m_wdog.setTop(m_args.input_timeout);
       m_wdog.reset();
     }
@@ -164,7 +164,6 @@ namespace CrawlerSerial
     void
     initBoard(bool noRestart)
     {
-      inf("ola");
       if (!m_driver->getVersionFirmware())
       {
         setEntityState(IMC::EntityState::ESTA_NORMAL, Utils::String::str(DTR("trying connecting to board")));
@@ -211,7 +210,6 @@ namespace CrawlerSerial
       m_press.setTimeStamp(m_tstamp);
       m_press.value = m_driver->m_crawlerData.pressure;
       dispatch(m_press, DF_KEEP_TIME);
-      inf("Send IMC::Pressure msg: %f", m_press.value);
     }
 
     //! Main loop.
@@ -222,11 +220,11 @@ namespace CrawlerSerial
       {
         waitForMessages(0.01);
 
-        if (m_wdog.overflow())
+        /* if (m_wdog.overflow())
         {
           inf("Timer overflow");
           throw RestartNeeded(DTR(Status::getString(CODE_COM_ERROR)), 10);
-        }
+        } */
 
         if (!Poll::poll(*m_uart, m_args.input_timeout))
           continue;
