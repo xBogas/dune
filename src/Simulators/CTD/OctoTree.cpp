@@ -57,45 +57,45 @@ namespace Simulators
 
     OctoTree::Node::Node()
     {
-      myRoot = nullptr;
-      childs.assign(8,nullptr);
-      leaf = true;
+      m_root = nullptr;
+      m_childs.assign(8,nullptr);
+      m_leaf = true;
     }
 
     OctoTree::Node::Node(Node* parent, double x, double y, double z, double temp, double cond)
     {
-      myRoot = parent;
-      item = new Item(x, y, z, temp, cond);
-      childs.assign(8,nullptr);
-      lim = Bounds(x, y, z);
-      leaf = true;
+      m_root = parent;
+      m_item = new Item(x, y, z, temp, cond);
+      m_childs.assign(8,nullptr);
+      m_lim = Bounds(x, y, z);
+      m_leaf = true;
     }
 
     OctoTree::Node::Node(Node* parent, Item* _data, Bounds oct)
     {
-      myRoot = parent;
-      item = _data;
-      childs.assign(8,nullptr);
-      lim = oct;
-      leaf = true;
+      m_root = parent;
+      m_item = _data;
+      m_childs.assign(8,nullptr);
+      m_lim = oct;
+      m_leaf = true;
     }
 
 
     OctoTree::Node::~Node()
     {
-      delete item;
-      if (!leaf)
+      delete m_item;
+      if (!m_leaf)
       {
         for (int i = 0; i < 8; i++)
-          delete childs[i];
+          delete m_childs[i];
       }
     }
 
     OctoTree::Node*
     OctoTree::new_root(Node* child, const Bounds& prev_volume, Item* new_data)
     {
-      Node* n_root = new Node(nullptr, nullptr, child->lim);
-      n_root->leaf = false;
+      Node* n_root = new Node(nullptr, nullptr, child->m_lim);
+      n_root->m_leaf = false;
 
       n_root->expandsBounds(*new_data);
 
@@ -104,25 +104,25 @@ namespace Simulators
       // when expanding if prev point is in the bounds of its node
       // it may be inserted in the "wrong" octant because this point will collide with new bounds mid point
       // the default is to insert the midpoints in the lower volume Ex: Bounds of z:[-1, 1] and new point is z = 0 -> inserting in Q5-8
-      if (child->item != nullptr)
+      if (child->m_item != nullptr)
       {
-        int pos_data = n_root->getOctant(*child->item);
+        int pos_data = n_root->getOctant(*child->m_item);
         if (pos != pos_data)
         {
-          n_root->insert_data(child->item);
-          child->item = nullptr;			
+          n_root->insert_data(child->m_item);
+          child->m_item = nullptr;			
         }
       }
-      n_root->childs[pos] = child;
-      child->myRoot = n_root;
+      n_root->m_childs[pos] = child;
+      child->m_root = n_root;
 
       if(n_root->isOutBounds(*new_data))
         return new_root(n_root, prev_volume, new_data);
 
-      n_root->item = new_data;
+      n_root->m_item = new_data;
 
-      if (child->lim.max_x == child->lim.min_x)
-        child->lim = n_root->getOctoBounds(pos);
+      if (child->m_lim.max_x == child->m_lim.min_x)
+        child->m_lim = n_root->getOctoBounds(pos);
       
       return n_root;
     }
@@ -130,12 +130,12 @@ namespace Simulators
     void
     OctoTree::Node::expandsBounds(const Item& val)
     {
-      double length = lim.max_x-lim.min_x;
+      double length = m_lim.max_x-m_lim.min_x;
       if (length == 0)
       {
-        double dx = (val.x - lim.max_x > 0 ? val.x - lim.max_x : lim.max_x - val.x);
-        double dy = (val.y - lim.max_y > 0 ? val.y - lim.max_y : lim.max_y - val.y);
-        double dz = (val.z - lim.max_z > 0 ? val.z - lim.max_z : lim.max_z - val.z);
+        double dx = (val.x - m_lim.max_x > 0 ? val.x - m_lim.max_x : m_lim.max_x - val.x);
+        double dy = (val.y - m_lim.max_y > 0 ? val.y - m_lim.max_y : m_lim.max_y - val.y);
+        double dz = (val.z - m_lim.max_z > 0 ? val.z - m_lim.max_z : m_lim.max_z - val.z);
         
         if (dx > dy)
         {
@@ -155,29 +155,29 @@ namespace Simulators
 
       double mid_x, mid_y, mid_z;
       
-      mid_x = (val.x > lim.max_x ? lim.max_x : lim.min_x);
-      mid_y = (val.y > lim.max_y ? lim.max_y : lim.min_y);
-      mid_z = (val.z > lim.max_z ? lim.max_z : lim.min_z);
+      mid_x = (val.x > m_lim.max_x ? m_lim.max_x : m_lim.min_x);
+      mid_y = (val.y > m_lim.max_y ? m_lim.max_y : m_lim.min_y);
+      mid_z = (val.z > m_lim.max_z ? m_lim.max_z : m_lim.min_z);
       
-      lim.max_x = mid_x + length;
-      lim.min_x = mid_x - length;
+      m_lim.max_x = mid_x + length;
+      m_lim.min_x = mid_x - length;
       
-      lim.max_y = mid_y + length;
-      lim.min_y = mid_y - length;
+      m_lim.max_y = mid_y + length;
+      m_lim.min_y = mid_y - length;
 
-      lim.max_z = mid_z + length;
-      lim.min_z = mid_z - length;
+      m_lim.max_z = mid_z + length;
+      m_lim.min_z = mid_z - length;
     }
 
     bool
     OctoTree::Node::isOutBounds(const Item& val)
     {
 
-      if (lim.min_x > val.x || val.x > lim.max_x)
+      if (m_lim.min_x > val.x || val.x > m_lim.max_x)
         return true;
-      if (lim.min_y > val.y || val.y > lim.max_y)
+      if (m_lim.min_y > val.y || val.y > m_lim.max_y)
         return true;
-      if (lim.min_z > val.z || val.z > lim.max_z)
+      if (m_lim.min_z > val.z || val.z > m_lim.max_z)
         return true;
 
       return false;
@@ -188,28 +188,28 @@ namespace Simulators
     {
       int pos = getOctant(*val);
 
-      if (childs[pos] == nullptr)
+      if (m_childs[pos] == nullptr)
       {
-        leaf = false;
-        childs[pos] = new Node(this, val, getOctoBounds(pos));
+        m_leaf = false;
+        m_childs[pos] = new Node(this, val, getOctoBounds(pos));
         return 0;
       }
-      else if (childs[pos]->item == nullptr)
+      else if (m_childs[pos]->m_item == nullptr)
       {
-        childs[pos]->item = val;
+        m_childs[pos]->m_item = val;
         return 0;
       }
       
-      return childs[pos]->insert_data(val)+1;
+      return m_childs[pos]->insert_data(val)+1;
     }
 
     int
     OctoTree::Node::getOctant(const Bounds& volume)
     {
       double mp_x, mp_y, mp_z;
-      mp_x = lim.getMidpoint('x');
-      mp_y = lim.getMidpoint('y');
-      mp_z = lim.getMidpoint('z');
+      mp_x = m_lim.getMidpoint('x');
+      mp_y = m_lim.getMidpoint('y');
+      mp_z = m_lim.getMidpoint('z');
 
       double x, y, z;
       x = volume.getMidpoint('x');
@@ -262,9 +262,9 @@ namespace Simulators
         throw ERR_INVALID_INSERT_POINT;
 
       double mp_x, mp_y, mp_z;
-      mp_x = lim.getMidpoint('x');
-      mp_y = lim.getMidpoint('y');
-      mp_z = lim.getMidpoint('z');
+      mp_x = m_lim.getMidpoint('x');
+      mp_y = m_lim.getMidpoint('y');
+      mp_z = m_lim.getMidpoint('z');
 
       if (val.x > mp_x)
       {
@@ -307,9 +307,9 @@ namespace Simulators
     OctoTree::Node::getOctant(double x, double y, double z)
     {
       double mp_x, mp_y, mp_z;
-      mp_x = lim.getMidpoint('x');
-      mp_y = lim.getMidpoint('y');
-      mp_z = lim.getMidpoint('z');
+      mp_x = m_lim.getMidpoint('x');
+      mp_y = m_lim.getMidpoint('y');
+      mp_z = m_lim.getMidpoint('z');
 
       if (x > mp_x)
       {
@@ -351,11 +351,11 @@ namespace Simulators
     OctoTree::Bounds
     OctoTree::Node::getOctoBounds(int oct)
     {
-      Bounds res = lim;
+      Bounds res = m_lim;
       double mp_x, mp_y, mp_z;
-      mp_x = lim.getMidpoint('x');
-      mp_y = lim.getMidpoint('y');
-      mp_z = lim.getMidpoint('z');
+      mp_x = m_lim.getMidpoint('x');
+      mp_y = m_lim.getMidpoint('y');
+      mp_z = m_lim.getMidpoint('z');
 
       switch (oct)
       {
@@ -408,15 +408,15 @@ namespace Simulators
     OctoTree::Data
     OctoTree::Node::search(double x, double y, double z)
     {
-      if (item->x == x && item->y == y && item->z == z)
-        return item->val;
+      if (m_item->x == x && m_item->y == y && m_item->z == z)
+        return m_item->val;
 
       int pos = getOctant(x, y, z);
 
-      if (childs[pos] == nullptr)
+      if (m_childs[pos] == nullptr)
         throw ERR_INVALID_POINT;
 
-      return childs[pos]->search(x, y, z);
+      return m_childs[pos]->search(x, y, z);
     }
 
     int OctoTree::Node::search_vol(const Bounds& vol, std::vector<Data>& points)
@@ -426,7 +426,7 @@ namespace Simulators
       
       int res = 1;
       if (item_inside(vol))
-        points.push_back(item->val);
+        points.push_back(m_item->val);
 
       //comparison with octants
       int o_max = getOctant(vol.max_x, vol.max_y, vol.max_z);
@@ -435,9 +435,9 @@ namespace Simulators
       if (o_max == o_min)	
         return res + search_child(vol, points, o_max);
 
-      double mpx = lim.getMidpoint('x');
-      double mpy = lim.getMidpoint('y');
-      double mpz = lim.getMidpoint('z');
+      double mpx = m_lim.getMidpoint('x');
+      double mpy = m_lim.getMidpoint('y');
+      double mpz = m_lim.getMidpoint('z');
       
       if (vol.min_x > mpx)
       {
@@ -520,19 +520,19 @@ namespace Simulators
     int
     OctoTree::Node::search_child(const Bounds& vol, std::vector<Data>& points, int oct)
     {
-      return (childs[oct] == nullptr ? 0 : childs[oct]->search_vol(vol, points) );
+      return (m_childs[oct] == nullptr ? 0 : m_childs[oct]->search_vol(vol, points) );
     }
 
     bool
     OctoTree::Node::item_inside(const Bounds& vol)
     {
-      if (item == nullptr)
+      if (m_item == nullptr)
         return false;
-      if (vol.min_x > item->x || item->x > vol.max_x)
+      if (vol.min_x > m_item->x || m_item->x > vol.max_x)
         return false;
-      if (vol.min_y > item->y || item->y > vol.max_y)
+      if (vol.min_y > m_item->y || m_item->y > vol.max_y)
         return false;
-      if (vol.min_z > item->z || item->z > vol.max_z)
+      if (vol.min_z > m_item->z || m_item->z > vol.max_z)
         return false;
 
       return true;
@@ -541,11 +541,11 @@ namespace Simulators
     bool
     OctoTree::Node::inside_vol(const Bounds& vol)
     {
-      if (vol.min_x > lim.min_x || vol.max_x < lim.max_x)
+      if (vol.min_x > m_lim.min_x || vol.max_x < m_lim.max_x)
         return false;
-      if (vol.min_y > lim.min_y || vol.max_y < lim.max_y)
+      if (vol.min_y > m_lim.min_y || vol.max_y < m_lim.max_y)
         return false;
-      if (vol.min_z > lim.min_z || vol.max_z < lim.max_z)
+      if (vol.min_z > m_lim.min_z || vol.max_z < m_lim.max_z)
         return false;
 
       return true;
@@ -554,14 +554,14 @@ namespace Simulators
     int
     OctoTree::Node::add_item(std::vector<Item*>& points)
     {
-      if (item!= nullptr)
-        points.push_back(item);
+      if (m_item!= nullptr)
+        points.push_back(m_item);
 
       int res = 1;
       for (int i = 0; i < 8; i++)
       {
-        if (childs[i] != nullptr)
-          res += childs[i]->add_item(points);		
+        if (m_childs[i] != nullptr)
+          res += m_childs[i]->add_item(points);		
       }
       return res;
     }
@@ -569,14 +569,14 @@ namespace Simulators
     int
     OctoTree::Node::add_data(std::vector<Data>& points)
     {
-      if (item!= nullptr)
-        points.push_back(item->val);
+      if (m_item!= nullptr)
+        points.push_back(m_item->val);
 
       int res = 1;
       for (int i = 0; i < 8; i++)
       {
-        if (childs[i] != nullptr)
-          res += childs[i]->add_data(points);		
+        if (m_childs[i] != nullptr)
+          res += m_childs[i]->add_data(points);		
       }
       return res;
     }
@@ -584,13 +584,13 @@ namespace Simulators
     int
     OctoTree::Node::number_nodes()
     {
-      if (leaf)
+      if (m_leaf)
         return 1;
       int res = 1;
       for (int i = 0; i < 8; i++)
       {
-        if (childs[i] != nullptr)
-          res += childs[i]->number_nodes();
+        if (m_childs[i] != nullptr)
+          res += m_childs[i]->number_nodes();
       }
       return res;
     }
@@ -600,110 +600,110 @@ namespace Simulators
     {
       if (isOutBounds(val))
         return -1;
-      if (item != nullptr)
+      if (m_item != nullptr)
       {
-        if (val.x == item->x && val.y == item->y && val.z == item->z && val.val.temp == item->val.temp && val.val.cond == item->val.cond)
+        if (val.x == m_item->x && val.y == m_item->y && val.z == m_item->z && val.val.temp == m_item->val.temp && val.val.cond == m_item->val.cond)
         {
-          delete item;
-          item = nullptr;
+          delete m_item;
+          m_item = nullptr;
           return 1;
         }
       }
       
       int pos = getOctant(val);
       
-      if (childs[pos] != nullptr)
-        return childs[pos]->remove_dat(val);
+      if (m_childs[pos] != nullptr)
+        return m_childs[pos]->remove_dat(val);
       
       return 0;    
     }
 
-    OctoTree::OctoTree(std::vector<std::string>& item)
+    OctoTree::OctoTree(std::vector<std::string>& m_item)
     {
-      root = nullptr;
-      for (unsigned i = 0; i < item.size(); i++)
+      m_root = nullptr;
+      for (unsigned i = 0; i < m_item.size(); i++)
       {
         std::vector<double> values;
-        DUNE::Utils::String::split(item[i], " ", values);
+        DUNE::Utils::String::split(m_item[i], " ", values);
         add(values[0], values[1], values[2], values[3], values[4]);
       }
     }
 
     OctoTree::OctoTree(double x, double y, double z, double temp, double cond)
     {
-      root = new Node(nullptr, x, y, z, temp, cond);
+      m_root = new Node(nullptr, x, y, z, temp, cond);
     }
 
     int
     OctoTree::add(double x, double y, double z, double temp, double cond)
     {
-      if (root == nullptr)
+      if (m_root == nullptr)
       {
-        root = new Node(nullptr, x, y, z, temp, cond);
+        m_root = new Node(nullptr, x, y, z, temp, cond);
         return 1;
       }
       Item* point = new Item(x, y, z, temp, cond);
-      if(root->isOutBounds(*point))
+      if(m_root->isOutBounds(*point))
       {
-        root = new_root(root, root->lim, point);
+        m_root = new_root(m_root, m_root->m_lim, point);
         return 0;
       }
-      return root->insert_data(point);
+      return m_root->insert_data(point);
     }
 
     OctoTree::~OctoTree()
     {
-      delete root;
+      delete m_root;
     }
 
     int
     OctoTree::remove_data(const Item& val)
     {
-      return root->remove_dat(val);
+      return m_root->remove_dat(val);
     }
 
     int
     OctoTree::search(const Bounds& vol, std::vector<Data>& points)
     {
-        return root->search_vol(vol, points);
+        return m_root->search_vol(vol, points);
     }
 
     int
     OctoTree::size()
     {
-      if (root ==  nullptr)
+      if (m_root ==  nullptr)
         return 0;
 
-      return root->number_nodes();
+      return m_root->number_nodes();
     }
 
     OctoTree::Data
     OctoTree::search_data(double x, double y, double z)
     {
-      return root->search(x, y, z);	
+      return m_root->search(x, y, z);	
     }
 
     void
     OctoTree::printTree()
     {
       std::ofstream logFile;
-      std::string logPath = path;
+      std::string logPath = m_path;
       logPath.append("/");
-      logPath.append(log);
+      logPath.append(m_log);
 
       logFile.open(logPath);
       if ( !logFile.is_open()	)
       {
-        if(!mkdir(path.c_str(), 0777))
+        if(!mkdir(m_path.c_str(), 0777))
           logFile.open(logPath);
         else
           return;
       }
         
-      if (root != nullptr)
-        root->printNode(0, logFile);
+      if (m_root != nullptr)
+        m_root->printNode(0, logFile);
       else
-        logFile << "Tree root is null\n";
+        logFile << "Tree m_root is null\n";
 
       logFile << "\nTree has " << size() << " Nodes\n";
       logFile.close();
@@ -713,18 +713,18 @@ namespace Simulators
     OctoTree::testTree()
     {
       std::vector<Item*> points;
-      root->add_item(points);
+      m_root->add_item(points);
 
       std::ofstream testFile;	
 
-      std::string testPath = path;
+      std::string testPath = m_path;
       testPath.append("/");
-      testPath.append(test);
+      testPath.append(m_test);
 
       testFile.open(testPath);
       if (!testFile.is_open())
       {
-        if(!mkdir(path.c_str(), 0777))
+        if(!mkdir(m_path.c_str(), 0777))
           testFile.open(testPath);
         else
           return false;
@@ -735,34 +735,34 @@ namespace Simulators
         search_data(points[i]->x, points[i]->y, points[i]->z);
       }
       testFile.close();
-      return root->testNode();
+      return m_root->testNode();
     }
 
     void
     OctoTree::Node::printNode(int dept, std::ostream& file)
     {
-      file << "At dept(" << dept << ") leaf:" << leaf << "\n";
-      file << "my root is:" << myRoot << "\tmy address:" << this << "\n";
-      if (item != nullptr)
-        file << "Point:\tx:" << item->x << "\t y: " << item->y << "\t z:" << item->z << "\tvalue:" << item->val.temp << " " << item->val.cond << "\n";
+      file << "At dept(" << dept << ") m_leaf:" << m_leaf << "\n";
+      file << "my m_root is:" << m_root << "\tmy address:" << this << "\n";
+      if (m_item != nullptr)
+        file << "Point:\tx:" << m_item->x << "\t y: " << m_item->y << "\t z:" << m_item->z << "\tvalue:" << m_item->val.temp << " " << m_item->val.cond << "\n";
       else
         file << "Don't have Point\n";
       
       file << "Bounds:\t";
-      file << "x: (" << lim.min_x << " ; " << lim.max_x << ')';
-      file << "\ty: (" << lim.min_y << " ; " << lim.max_y << ')';
-      file << "\tz: (" << lim.min_z << " ; " << lim.max_z << ')';
+      file << "x: (" << m_lim.min_x << " ; " << m_lim.max_x << ')';
+      file << "\ty: (" << m_lim.min_y << " ; " << m_lim.max_y << ')';
+      file << "\tz: (" << m_lim.min_z << " ; " << m_lim.max_z << ')';
       file << "\n\n\n";
-      if(leaf)
+      if(m_leaf)
         return;
 
       dept++;
       for (int i = 0; i < 8; i++)
       {
-        if (childs[i] != nullptr)
+        if (m_childs[i] != nullptr)
         {
           file << "Child at Q" << i+1 << "\n";
-          childs[i]->printNode(dept, file);
+          m_childs[i]->printNode(dept, file);
         }
       }
     }
@@ -771,21 +771,21 @@ namespace Simulators
     OctoTree::Node::testNode()
     {
       int sta = 0;
-      if (isOutBounds(*item))
+      if (isOutBounds(*m_item))
         throw ERR_INVALID_BOUNDS;
       Bounds aux;
       for (int i = 0; i < 8; i++)
       {
-        if (childs[i] != nullptr)
+        if (m_childs[i] != nullptr)
         {		
           aux = getOctoBounds(i);
-          if (aux.max_x != childs[i]->lim.max_x || aux.min_x != childs[i]->lim.min_x)
+          if (aux.max_x != m_childs[i]->m_lim.max_x || aux.min_x != m_childs[i]->m_lim.min_x)
             sta ++;
-          if (aux.max_y != childs[i]->lim.max_y || aux.min_y != childs[i]->lim.min_y)
+          if (aux.max_y != m_childs[i]->m_lim.max_y || aux.min_y != m_childs[i]->m_lim.min_y)
             sta ++;
-          if (aux.max_z != childs[i]->lim.max_z || aux.min_z != childs[i]->lim.min_z)
+          if (aux.max_z != m_childs[i]->m_lim.max_z || aux.min_z != m_childs[i]->m_lim.min_z)
             sta ++;
-          sta += childs[i]->testNode();	
+          sta += m_childs[i]->testNode();	
         }
       }
       return sta;

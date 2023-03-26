@@ -78,7 +78,9 @@ namespace Simulators
       IMC::Conductivity m_cond;
       //! Current salinity.
       IMC::Salinity m_salinity;
+      //! Current depth
       IMC::Depth m_depth;
+      //! Current pressure
       IMC::Pressure m_pressure;
       //! Last received simulated state.
       IMC::SimulatedState m_sstate;
@@ -93,9 +95,9 @@ namespace Simulators
       //! Reference longitude
       double m_long;
       //! North offset
-      double n_offset = 0;
+      double m_north_of = 0;
       //! East offset
-      double e_offset = 0;
+      double m_east_of = 0;
 
       Task(const std::string& name, Tasks::Context& ctx):
         Tasks::Periodic(name, ctx),
@@ -190,7 +192,7 @@ namespace Simulators
 
         if (m_sstate.lat != m_lat && m_sstate.lon != m_long)
         {
-          WGS84::displacement(m_lat, m_long, 0, msg->lat, msg->lon, 0, &n_offset, &e_offset);
+          WGS84::displacement(m_lat, m_long, 0, msg->lat, msg->lon, 0, &m_north_of, &m_east_of);
           m_lat = m_sstate.lat;
           m_long = m_sstate.lon;
         }
@@ -210,7 +212,7 @@ namespace Simulators
         if (!isActive())
           return;
 
-        OctoTree::Bounds vol(m_sstate.x-n_offset, m_sstate.y-e_offset, m_sstate.z, m_args.s_radius);
+        OctoTree::Bounds vol(m_sstate.x-m_north_of, m_sstate.y-m_east_of, m_sstate.z, m_args.s_radius);
         std::vector<OctoTree::Data> values;
         int inter = m_otree->search(vol, values);
         

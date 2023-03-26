@@ -103,11 +103,11 @@ namespace Simulators
 
       struct Node
       {
-        bool leaf;
-        Node* myRoot;
-        std::vector<Node*> childs;
-        Bounds lim;
-        Item* item;
+        bool m_leaf;
+        Node* m_root;
+        std::vector<Node*> m_childs;
+        Bounds m_lim;
+        Item* m_item;
         
         //! Creates a new Node object with variables null
         Node();
@@ -263,10 +263,10 @@ namespace Simulators
       print_error(int e);
 
     private:
-      Node* root;		                            // Node pointer
-      std::string path  = "OctoTree_Files";		  // Path to Tree files
-      std::string log   = "OctoTree_log.txt";	  // Tree log file
-      std::string test 	= "OctoTree_test.txt";	// Tree test file
+      Node* m_root;		                            // Node pointer
+      std::string m_path  = "OctoTree_Files";		  // Path to Tree files
+      std::string m_log   = "OctoTree_log.txt";	  // Tree log file
+      std::string m_test 	= "OctoTree_test.txt";	// Tree test file
     };
   }
 }
