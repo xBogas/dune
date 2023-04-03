@@ -98,6 +98,7 @@ namespace CrawlerSerial
           .description("Amount of seconds to wait for data before reporting an error");
 
       bind<IMC::PWM>(this);
+      // bind<IMC::RemoteActions>(this);
     }
 
     //! Update internal state with new parameter values.
@@ -143,8 +144,8 @@ namespace CrawlerSerial
     {
       m_driver->stopAcquisition();
       m_uart->flush();
-      Delay::wait(4.0F);
-      initBoard(true);
+      Delay::wait(1.0f);
+      initBoard();
       m_wdog.setTop(m_args.input_timeout);
       m_wdog.reset();
     }
@@ -162,35 +163,21 @@ namespace CrawlerSerial
     }
 
     void
-    initBoard(bool noRestart)
+    initBoard()
     {
       if (!m_driver->getVersionFirmware())
       {
         setEntityState(IMC::EntityState::ESTA_NORMAL, Utils::String::str(DTR("trying connecting to board")));
         war(DTR("failed to get firmware version"));
       }
-      else
-      {
-        inf("Firmware Version: %s", m_driver->getFirmwareVersion().c_str());
-      }
 
       if (!m_driver->startAcquisition())
       {
-        if (!noRestart)
-        {
-          m_driver->sendCommandNoRsp("@RESET,*");
-          Delay::wait(1.0);
-          throw RestartNeeded(DTR("failed to start acquisition"), 10, true);
-        }
-        else
-        {
-          setEntityState(IMC::EntityState::ESTA_NORMAL, Utils::String::str(DTR("trying connecting to board")));
-          war(DTR("failed to start acquisition"));
-          return;
-        }
+        setEntityState(IMC::EntityState::ESTA_NORMAL, Utils::String::str(DTR("trying connecting to board")));
+        war(DTR("failed to start"));
       }
 
-      debug("Init and Start OK");
+      debug("Init OK");
       m_wdog.setTop(m_args.input_timeout);
       m_wdog.reset();
     }
@@ -198,8 +185,8 @@ namespace CrawlerSerial
     void
     consume(const IMC::PWM *msg)
     {
-      std::string send = String::str("@PWM,%u,%u", msg->period, msg->duty_cycle);
-      m_driver->sendCommand(send.c_str(), "$RSP,ACK,,*");
+      std::string send = String::str("@PWM,%d,*", msg->duty_cycle);
+      m_driver->sendCommandNoRsp(send.c_str());
     }
 
     void
@@ -216,6 +203,9 @@ namespace CrawlerSerial
     void
     onMain(void)
     {
+      int pwm = 0;
+      int dir = 0;
+
       while (!stopping())
       {
         waitForMessages(0.01);
@@ -234,7 +224,27 @@ namespace CrawlerSerial
           dispatchData();
           m_wdog.reset();
         }
+
+        std::string send = String::str("@PWM,%d,*", pwm);
+        m_driver->sendCommandNoRsp(send.c_str());
+
+        if (dir == 0)
+        {
+          if (pwm >= 100)
+            dir = 1;
+          else
+            pwm++;
+        }
+        else
+        {
+          if (pwm <= 0)
+            dir = 0;
+          else
+            pwm--;
+        }
       }
+
+      m_driver->stopAcquisition();
     }
   };
 }

@@ -40,7 +40,7 @@ namespace CrawlerSerial
     bool
     getVersionFirmware()
     {
-      if (!sendCommand("@VERS,*", "$VERS,0.0.0,*"))
+      if (sendCommand("@VERS,*", "$VERS,"))
         return true;
 
       return false;
@@ -49,7 +49,7 @@ namespace CrawlerSerial
     bool
     startAcquisition()
     {
-      if (!sendCommand("@START,*", "$RSP,ACK,*"))
+      if (sendCommand("@START,*", "$RSP,ACK,*"))
         return true;
 
       return false;
@@ -58,7 +58,7 @@ namespace CrawlerSerial
     bool
     stopAcquisition()
     {
-      if (!sendCommand("@STOP,*", "$STOP,*"))
+      if (sendCommand("@STOP,*", "$STOP,*"))
         return true;
 
       return false;
@@ -78,7 +78,7 @@ namespace CrawlerSerial
       bfr[strlen(bfr) - 3] = '\0';
 
       char *param = std::strtok(bfr, ",");
-      if (std::strcmp(param, "$PRESS") == 0) // $PRESS,fp value\0
+      if (std::strcmp(param, "$PRESS") == 0)
       {
         param = std::strtok(NULL, ",");
         std::sscanf(param, "%f", &m_crawlerData.pressure);
@@ -117,12 +117,13 @@ namespace CrawlerSerial
       std::sprintf(cmdReplyText, "%s\n", reply); */
       char bfrUart[128];
       m_task->inf("Command: %s", cmdText);
+
       m_uart->writeString(cmdText);
 
       if (Poll::poll(*m_uart, m_timeout_uart))
       {
         m_uart->readString(bfrUart, sizeof(bfrUart));
-        m_task->spew("Reply: %s", bfrUart);
+        m_task->inf("Reply: %s", bfrUart);
         if (std::strcmp(bfrUart, cmdReplyText) == 0)
         {
           return true;
