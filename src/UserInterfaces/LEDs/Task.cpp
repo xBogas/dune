@@ -66,7 +66,7 @@ namespace UserInterfaces
 
     struct Arguments
     {
-      //! Interface (GPIO, Parallel Port, Emulator).
+      //! Interface (GPIO, Parallel Port, Emulator). // Interface PWMv2
       std::string interface;
       //! LED identifiers.
       std::vector<std::string> led_ids;
@@ -338,6 +338,21 @@ namespace UserInterfaces
         while (!stopping())
         {
           consumeMessages();
+
+          /* 
+          // Only one 1 out ?
+          for (size_t i = 0; i < m_outs.size(); i++)
+          {
+            IMC::SetPWM signal;
+            signal.id     = {0,1}; // only two channels in rasp
+            signal.period = m_current->at(m_cursor);
+            m_cursor++;
+            signal.duty_cycle = m_current->at(m_cursor);
+            m_cursor++;
+
+            dispatch(signal);
+          }
+          */
 
           for (unsigned i = 0; i < m_outs.size(); ++i)
           {
