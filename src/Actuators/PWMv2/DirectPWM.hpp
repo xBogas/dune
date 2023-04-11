@@ -1,8 +1,11 @@
 #ifndef ACTUATORS_PWMV2_DIRECTPWM_HPP_INCLUDED_
 #define ACTUATORS_PWMV2_DIRECTPWM_HPP_INCLUDED_
 
-#include "DMA.hpp"
-#include "DirectGPIO.hpp"
+//#include "DMA.hpp"
+//#include "DirectGPIO.hpp"
+
+#include <sys/mman.h>
+#include <bitset>
 
 namespace Actuators
 {
@@ -37,7 +40,7 @@ namespace Actuators
     public:
 
       DirectPWM(int port)
-        : m_port(port), m_channel(-1)
+        : m_port(port), m_channel(-1), m_function(-1)
       {
         // validate port and channel
         std::ifstream config;
@@ -56,48 +59,57 @@ namespace Actuators
             //line must have format {dtoverlay=pwm,pin=XX,func=X}
             if (line.find("dtoverlay=pwm", 0) == 0)
             {
-              std::cout << "At [13] " << line[13] << "\n";
+              //std::cout << "At [13] " << line[13] << "\n";
 
               if (line[13] == '-')
               {
-                std::cout << "Enabled 2 pwm channels\n";
+                //std::cout << "Enabled 2 pwm channels\n";
                 pin1 = (line[24] - '0')*10 + line[25]-'0';
                 func1 = line[32] - '0';
-                std::cout << "PWM channel0: pin " << pin1 << " function " << func1 << "\n";
+                //std::cout << "PWM channel0: pin " << pin1 << " function " << func1 << "\n";
 
                 pin2 = (line[39] - '0')*10 + line[40]-'0';
                 func2 = line[48] - '0';
-                std::cout << "PWM channel1: pin " << pin2 << " function " << func2 << "\n";
+                //std::cout << "PWM channel1: pin " << pin2 << " function " << func2 << "\n";
               }
               else
               {
-                std::cout << "Enabled 1 pwm channels\n";
+                //std::cout << "Enabled 1 pwm channels\n";
                 pin1 = (line[18] - '0')*10 + line[19]-'0';
                 func1 = line.back() - '0';
-                std::cout << "PWM channel: pin " << pin1 << " function " << func1 << "\n";
+                //std::cout << "PWM channel: pin " << pin1 << " function " << func1 << "\n";
               }
               break;
             }
           }
         }
         else
-          throw std::runtime_error("Failed to open /boot/config.txt");
+          throw std::runtime_error("[DirectPWM]: Failed to open /boot/config.txt");
 
         if (m_port == pin1)
+        {
           m_channel = 0;
+          m_function = func1;
+        }
         else if(m_port == pin2)
+        {
           m_channel = 1;
+          m_function = func2;
+        }
         else
-          std::runtime_error("PWM port not available in /boot/config.txt");
+          throw std::runtime_error("[DirectPWM]: PWM port not available in /boot/config.txt");
 
-        std::cout << "Port " << m_port << " CHANNEL " << m_channel << "\n";
+        if(m_function < 0 || m_function > 7)
+          throw std::runtime_error("[DirectPWM]: Invalid GPIO function selected");
+
+        //std::cout << "Port " << m_port << " CHANNEL " << m_channel << "\n";
         int fd = open("/dev/mem", O_RDWR | O_SYNC);
         if(fd < 0)
-          throw std::runtime_error("Failed to open /dev/mem");
+          throw std::runtime_error("[DirectPWM]: Failed to open /dev/mem");
         
         uint32_t* peri = (uint32_t*)mmap(NULL, c_PAGE_SIZE, (PROT_READ | PROT_WRITE), MAP_SHARED, fd, c_PERI_BASE);
         if (peri == MAP_FAILED)
-          throw std::runtime_error("Failed to map memory");
+          throw std::runtime_error("[DirectPWM]: Failed to map memory");
 
         m_gpio   = peri + c_GPIO_REGISTER_OFFSET/4;
         m_pwm    = peri + c_PWM_REGISTER_OFFSET/4;
@@ -105,15 +117,21 @@ namespace Actuators
         
         close(fd);
 
-        initGPIO(m_port, FSEL::FUNC5);
+        initGPIO(m_port, m_function);
 
         setClock();
 
-        setMode(m_channel, 1);
+        enableChannelMode(m_channel, 1);
 
         setRange(20'000);
 
-        setData(1'000);
+        setData(0);
+      }
+
+      void
+      setPeriod(uint32_t _period)
+      {
+        setRange(_period);
       }
 
       void
@@ -189,18 +207,24 @@ namespace Actuators
       }
 
       void
-      setMode(uint32_t channel, uint32_t mode)
+      enableChannelMode(uint32_t channel, uint32_t mode)
       {
         uint32_t ctl = read_peri(m_pwm);
         if (channel == 0)
         {
-          ctl |= 0x0001;    // enable pwm channel 0
-          ctl |= 0x0080;    // use M/S transmission
+          ctl |= 0x0001;      // enable pwm channel 0
+          if (mode == 1)
+            ctl |= 0x0080;    // use M/S transmission
+          else
+            ctl &= ~(0x0080); // use the bad mode
         }
         else
         {
-          ctl |= 0x0100;    // enable pwm channel 1
-          ctl |= 0x8000;    // use M/S transmission
+          ctl |= 0x0100;      // enable pwm channel 1
+          if (mode == 1)          
+            ctl |= 0x8000;    // use M/S transmission
+          else
+            ctl &= ~(0x8000); // use the bad mode
         }
         
         write_peri(m_pwm, ctl);
@@ -231,9 +255,10 @@ namespace Actuators
         else
           write_peri(m_pwm+9, data);
       }
-      
+
       int m_port;
       int m_channel;
+      int m_function;
       volatile uint32_t* m_gpio;
       volatile uint32_t* m_clock;
       volatile uint32_t* m_pwm;

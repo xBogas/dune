@@ -32,8 +32,8 @@
 
 // local headers
 #include "PWMsignal.hpp"
-#include "DMA.hpp"
-#include "DirectGPIO.hpp"
+//#include "DMA.hpp"
+//#include "DirectGPIO.hpp"
 #include "DirectPWM.hpp"
 
 // TODO: make pwm channels available in /boot/config.txt
@@ -166,7 +166,7 @@ namespace Actuators
       void
       consume(const IMC::SetPWM* msg)
       {
-        //m_channel[msg->id]->setPeriod(msg->period);
+        m_channel[msg->id]->setPeriod(msg->period);
         m_channel[msg->id]->setDutyCycle(msg->duty_cycle);
       }
 
@@ -176,14 +176,15 @@ namespace Actuators
       {
         while (!isStopping())
         {
-          m_channel[0]->setDutyCycle(1'000);
+          consumeMessages();
+          /* m_channel[0]->setDutyCycle(1'000);
           m_channel[1]->setDutyCycle(1'000);
           inf("DutyCycle set 1ms");
           Delay::wait(1);
           m_channel[0]->setDutyCycle(2'000);
           m_channel[1]->setDutyCycle(2'000);
           inf("DutyCycle set 2ms");
-          Delay::wait(1);
+          Delay::wait(1); */
         }
       }
     };
