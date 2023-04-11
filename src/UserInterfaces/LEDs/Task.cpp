@@ -86,6 +86,8 @@ namespace UserInterfaces
       std::vector<unsigned> m_patterns[PAT_COUNT];
       // Current pattern.
       std::vector<unsigned>* m_current;
+
+      std::vector<unsigned>* m_old_msg;
       // Position in the pattern.
       unsigned m_cursor;
       // Current pattern id.
@@ -101,13 +103,14 @@ namespace UserInterfaces
       Task(const std::string& name, Tasks::Context& ctx):
         Tasks::Task(name, ctx),
         m_current(NULL),
+        m_old_msg(NULL),
         m_cursor(0),
         m_current_id(PAT_NORMAL),
         m_next_id(-1),
         m_critical_error(false)
       {
         param("Interface", m_args.interface)
-        .values("GPIO, Parallel Port, Emulator, Message")
+        .values("GPIO, Parallel Port, Emulator, Message, PWM")
         .defaultValue("GPIO");
 
         param("Parallel Port - Base Address", m_args.pp_addr)
@@ -179,6 +182,12 @@ namespace UserInterfaces
               out = new ParallelPort(m_args.pp_addr, nr);
             else if (m_args.interface.compare("Emulator") == 0)
               out = new Emulator(nr);
+            else if (m_args.interface.compare("PWM") == 0)
+            {
+              inf("Enable PWM for testing");
+              return;
+            }
+              
             else
               std::runtime_error(String::str("unsupported interface '%s'", m_args.interface.c_str()));
           }
@@ -325,6 +334,7 @@ namespace UserInterfaces
         if (m_next_id >= 0)
         {
           m_current_id = (uint8_t)m_next_id;
+          m_old_msg = m_current;
           m_current = &m_patterns[m_current_id];
           m_next_id = -1;
         }
@@ -333,44 +343,73 @@ namespace UserInterfaces
       void
       onMain(void)
       {
-        initializeLEDs();
-
+        //initializeLEDs();
+        Delay::wait(2);
+        inf("Ready to consume IMC");
+        
         while (!stopping())
         {
-          consumeMessages();
+          waitForMessages(1.0f);
 
-          /* 
-          // Only one 1 out ?
-          for (size_t i = 0; i < m_outs.size(); i++)
+          // Only one 1 out or ?
+          if ((m_cursor == 0) && (m_old_msg != m_current))          
           {
             IMC::SetPWM signal;
-            signal.id     = {0,1}; // only two channels in rasp
-            signal.period = m_current->at(m_cursor);
-            m_cursor++;
-            signal.duty_cycle = m_current->at(m_cursor);
-            m_cursor++;
+            signal.id         = 0; // only two channels in rasp {0,1}
+            signal.period     = 0;
+            signal.duty_cycle = 0;
+            
+            // TODO: correct this
+            if (m_current->at(m_cursor) == 1)
+            {
+              ++m_cursor;
+              signal.duty_cycle += m_current->at(m_cursor);
+              signal.period     += m_current->at(m_cursor);
+              ++m_cursor;
 
+              if (m_current->at(m_cursor) == 0)
+              {
+                ++m_cursor;
+                signal.period += m_current->at(m_cursor);
+                ++m_cursor;
+              }
+              else
+              {
+                inf("Position should be 0");
+                throw RestartNeeded("Error reading pattern", 5);
+              }
+            }
+            else
+            {
+              inf("Error detected not found 1 state first");
+              throw RestartNeeded("Can only operate with true state first", 5);
+            }
+
+            inf("Sending setPWM: [%d, %d]", signal.duty_cycle, signal.period);
             dispatch(signal);
+            // maybe need to make sure pwm not overlay over one another
+            // Delay::waitMsec(signal.period);
+            // for Fuel low
           }
-          */
+          else
+          {
+            switchPattern();
+            m_cursor = 0;
+          }
 
-          for (unsigned i = 0; i < m_outs.size(); ++i)
+          /* for (unsigned i = 0; i < m_outs.size(); ++i)
           {
             m_outs[i]->setValue(m_current->at(m_cursor));
             ++m_cursor;
           }
 
           Delay::waitMsec(m_current->at(m_cursor));
-          ++m_cursor;
+          ++m_cursor; */
 
-          if (m_cursor == m_current->size())
-          {
-            switchPattern();
-            m_cursor = 0;
-          }
+          
         }
 
-        setLEDs(false);
+        //setLEDs(false);
       }
     };
   }
