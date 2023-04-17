@@ -196,6 +196,17 @@ namespace Control
         {
           TupleList tuples(msg->actions);
 
+          int light_val = tuples.get("Lights", 0);
+          if (light_val != 0)
+          {
+            IMC::SetPWM set_lights;
+            set_lights.id = 0;
+            set_lights.period = 20'000;
+            set_lights.duty_cycle = (light_val + 127.0) * 20'000.0/(127.0-(-127.0)); // -127 <-> 127  => 0 <-> 20'000
+            dispatch(set_lights);
+          }
+          
+
           if (tuples.get("Stop", 0))
             m_thrust = 0;
           else if (tuples.get("Decelerate", 0))
