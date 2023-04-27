@@ -146,6 +146,21 @@ namespace CrawlerSerial
       return m_crawlerData.firmVersion;
     }
 
+    bool
+    hasHeartbeat()
+    {
+      m_uart->writeString("#AT#");
+      if (Poll::poll(*m_uart, m_timeout_uart))
+      {
+        char response[64];
+        m_uart->readString(response, sizeof(response));
+        if (std::strcmp(response, "OK") == 0)
+          return true;
+      }
+      
+      return false;
+    }
+
     CrawlerData m_crawlerData;
 
   private:
