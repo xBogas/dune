@@ -97,8 +97,7 @@ namespace CrawlerSerial
           .units(Units::Second)
           .description("Amount of seconds to wait for data before reporting an error");
 
-      bind<IMC::PWM>(this);
-      // bind<IMC::RemoteActions>(this);
+      bind<IMC::RemoteActions>(this);
     }
 
     //! Update internal state with new parameter values.
@@ -182,11 +181,22 @@ namespace CrawlerSerial
       m_wdog.reset();
     }
 
-    void
-    consume(const IMC::PWM *msg)
+    void consume(const IMC::RemoteActions *msg)
     {
-      std::string send = String::str("@PWM,%d,*", msg->duty_cycle);
-      m_driver->sendCommandNoRsp(send.c_str());
+      if (msg->getDestination() != getSystemId())
+        return;
+
+      Utils::TupleList tuples(msg->actions);
+      int light_val = tuples.get("Lights", 0);
+      if (light_val != 0)
+      {
+        IMC::SetServoPosition set_light;
+        set_light.id = 0;
+        set_light.value = ((light_val - (-127.0)) / (127.0 - (-127.0)) * (100));
+
+        std::string send = String::str("@PWM,%d,*", (int) set_light.value);
+        m_driver->sendCommandNoRsp(send.c_str());
+      }
     }
 
     void
@@ -203,18 +213,15 @@ namespace CrawlerSerial
     void
     onMain(void)
     {
-      int pwm = 0;
-      int dir = 0;
-
       while (!stopping())
       {
-        waitForMessages(0.01);
+        waitForMessages(1.0);
 
-        /* if (m_wdog.overflow())
+        if (m_wdog.overflow())
         {
           inf("Timer overflow");
           throw RestartNeeded(DTR(Status::getString(CODE_COM_ERROR)), 10);
-        } */
+        }
 
         if (!Poll::poll(*m_uart, m_args.input_timeout))
           continue;
@@ -223,24 +230,6 @@ namespace CrawlerSerial
         {
           dispatchData();
           m_wdog.reset();
-        }
-
-        std::string send = String::str("@PWM,%d,*", pwm);
-        m_driver->sendCommandNoRsp(send.c_str());
-
-        if (dir == 0)
-        {
-          if (pwm >= 100)
-            dir = 1;
-          else
-            pwm++;
-        }
-        else
-        {
-          if (pwm <= 0)
-            dir = 0;
-          else
-            pwm--;
         }
       }
 
