@@ -164,6 +164,8 @@ namespace CrawlerSerial
     void
     initBoard()
     {
+      m_driver->stopAcquisition();
+
       if (!m_driver->getVersionFirmware())
       {
         setEntityState(IMC::EntityState::ESTA_NORMAL, Utils::String::str(DTR("trying connecting to board")));
@@ -187,7 +189,7 @@ namespace CrawlerSerial
         return;
 
       Utils::TupleList tuples(msg->actions);
-      int light_val = tuples.get("Lights", 0);
+      int light_val = tuples.get("Lights", -127);
       if (light_val != 0)
       {
         IMC::SetServoPosition set_light;
@@ -221,6 +223,7 @@ namespace CrawlerSerial
         {
           inf("Timer overflow");
           throw RestartNeeded(DTR(Status::getString(CODE_COM_ERROR)), 10);
+          initBoard();
         }
 
         if (!Poll::poll(*m_uart, m_args.input_timeout))
@@ -231,6 +234,8 @@ namespace CrawlerSerial
           dispatchData();
           m_wdog.reset();
         }
+
+        m_uart->flush();
       }
 
       m_driver->stopAcquisition();

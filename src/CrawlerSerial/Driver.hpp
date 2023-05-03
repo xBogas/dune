@@ -12,7 +12,7 @@ namespace CrawlerSerial
     struct CrawlerData
     {
       std::string firmVersion;
-      float pressure;
+      uint16_t pressure;
 
       bool state_new_data[1];
     };
@@ -81,9 +81,15 @@ namespace CrawlerSerial
       if (std::strcmp(param, "$PRESS") == 0)
       {
         param = std::strtok(NULL, ",");
-        std::sscanf(param, "%f", &m_crawlerData.pressure);
-        m_task->debug("Pressure: %f mBar", m_crawlerData.pressure);
-        m_crawlerData.state_new_data[0] = true;
+        uint16_t pressure = atoi(param);
+        if (pressure == 0)
+          m_task->war("Pressure sensor is disconected.");
+        else
+        {
+          m_crawlerData.pressure = pressure;
+          m_task->debug("Pressure: %d mBar", m_crawlerData.pressure);
+          m_crawlerData.state_new_data[0] = true;
+        }
       }
 
       bool result = true;
@@ -101,7 +107,7 @@ namespace CrawlerSerial
     {
       char cmdText[32];
       std::sprintf(cmdText, "%s%c\n", cmd, (Algorithms::XORChecksum::compute((uint8_t *)cmd, strlen(cmd) - 1) | 0x80));
-      //std::sprintf(cmdText, "%s\n", cmd);
+      // std::sprintf(cmdText, "%s\n", cmd);
       m_task->inf("Command (no rsp): %s", cmdText);
       m_uart->writeString(cmdText);
     }

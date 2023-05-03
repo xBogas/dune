@@ -1,5 +1,5 @@
 //***************************************************************************
-// Copyright 2007-2023 Universidade do Porto - Faculdade de Engenharia      *
+// Copyright 2007-2022 Universidade do Porto - Faculdade de Engenharia      *
 // Laboratório de Sistemas e Tecnologia Subaquática (LSTS)                  *
 //***************************************************************************
 // This file is part of DUNE: Unified Navigation Environment.               *
@@ -59,7 +59,7 @@ namespace Control
         float max_thrust;
       };
 
-      struct Task: public DUNE::Control::BasicRemoteOperation
+      struct Task : public DUNE::Control::BasicRemoteOperation
       {
         //! Heading rate reference
         float m_hrate;
@@ -80,48 +80,47 @@ namespace Control
         //! The analog axis is being used for thrust
         bool m_analog_thrust;
 
-        Task(const std::string& name, Tasks::Context& ctx):
-          DUNE::Control::BasicRemoteOperation(name, ctx),
-          m_hrate(0),
-          m_thrust(0),
-          m_acceleration(0),
-          m_verfin(0),
-          m_horfin(0),
-          m_torque_control(false),
-          m_analog_thrust(false)
+        Task(const std::string &name, Tasks::Context &ctx) : DUNE::Control::BasicRemoteOperation(name, ctx),
+                                                             m_hrate(0),
+                                                             m_thrust(0),
+                                                             m_acceleration(0),
+                                                             m_verfin(0),
+                                                             m_horfin(0),
+                                                             m_torque_control(false),
+                                                             m_analog_thrust(false)
         {
           param("Pitch Reference", m_args.pitch_ref)
-          .defaultValue("15.0")
-          .units(Units::Degree)
-          .description("Desired pitch while remotely operating the vehicle");
+              .defaultValue("15.0")
+              .units(Units::Degree)
+              .description("Desired pitch while remotely operating the vehicle");
 
           param("Maximum Heading Rate", m_args.max_hrate)
-          .defaultValue("40.0")
-          .units(Units::DegreePerSecond)
-          .description("Maximum admissible heading rate to be commanded");
+              .defaultValue("40.0")
+              .units(Units::DegreePerSecond)
+              .description("Maximum admissible heading rate to be commanded");
 
           // Torque control parameters.
           param("Position of Horizontal Fins", m_args.horfin_pos)
-          .defaultValue("0.0")
-          .units(Units::Degree)
-          .description("Fixed position for the horizontal fins while remotely operating");
+              .defaultValue("0.0")
+              .units(Units::Degree)
+              .description("Fixed position for the horizontal fins while remotely operating");
 
           param("EstimatedState Timeout", m_args.estate_tout)
-          .defaultValue("1.0")
-          .units(Units::Second)
-          .description("Timeout for the estimated state in case navigation fails");
+              .defaultValue("1.0")
+              .units(Units::Second)
+              .description("Timeout for the estimated state in case navigation fails");
 
           param("Force Torque Control", m_args.force_torque_control)
-          .defaultValue("false")
-          .description("Force direct torque control instead of desired heading rate");
+              .defaultValue("false")
+              .description("Force direct torque control instead of desired heading rate");
 
           param("Disable Analog Thrust", m_args.disable_analog_thrust)
-          .defaultValue("true")
-          .description("Enable or disable analog thrust over fixed increments");
+              .defaultValue("true")
+              .description("Enable or disable analog thrust over fixed increments");
 
           param("Maximum Thruster Actuation", m_args.max_thrust)
-          .defaultValue("1.0")
-          .description("Maximum admissible thruster actuation while remotely operating");
+              .defaultValue("1.0")
+              .description("Maximum admissible thruster actuation while remotely operating");
 
           // Add remote actions.
           addActionButton("Accelerate");
@@ -192,7 +191,7 @@ namespace Control
         }
 
         void
-        onRemoteActions(const IMC::RemoteActions* msg)
+        onRemoteActions(const IMC::RemoteActions *msg)
         {
           TupleList tuples(msg->actions);
 
@@ -251,7 +250,7 @@ namespace Control
         }
 
         void
-        consume(const IMC::EstimatedState* msg)
+        consume(const IMC::EstimatedState *msg)
         {
           if (msg->getSource() != getSystemId())
             return;
