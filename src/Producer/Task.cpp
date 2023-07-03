@@ -48,6 +48,8 @@ namespace Producer
 
     uint16_t dst_port;
 
+    std::string board_ip;
+
     std::string uart_dev;
 
     unsigned uart_baud;
@@ -86,6 +88,10 @@ namespace Producer
         .defaultValue("8080")
         .description("Board UDP port");
 
+      param("Board IP", m_args.board_ip)
+        .defaultValue("10.0.2.83")
+        .description("Board IPv4");
+
       param("Serial Port", m_args.uart_dev)
         .defaultValue("/dev/ttyACM0")
         .description("Serial port device used to communicate with the board");
@@ -122,6 +128,7 @@ namespace Producer
       {
         m_sock = new UDPSocket();
         m_sock->bind(m_args.src_port);
+        m_sock->enableBroadcast(true);
         return;
       }
       
@@ -171,14 +178,26 @@ namespace Producer
       try
       {
         rv = IMC::Packet::serialize(&msg, m_bfr, c_bfr_size);
-        m_sock->write(m_bfr, rv, Address::Any, m_args.dst_port);
+        m_sock->write(m_bfr, rv, m_args.board_ip.c_str(), m_args.dst_port);
       }
       catch(const std::exception& e)
       {
-        war(DTR("failed msg %s to send to %u: %s"), msg.getName(), m_args.dst_port, e.what());
+        war(DTR("failed sending msg %s to %s port %u: %s"), msg.getName(), m_args.board_ip.c_str(), m_args.dst_port, e.what());
         return;
       }
-      inf("Send msg %s to port %u", msg.getName(), m_args.dst_port);
+      inf("Send msg %s to %s :port %u", msg.getName(), m_args.board_ip.c_str(), m_args.dst_port);
+
+      IMC::Header sent;
+      IMC::Packet::deserializeHeader(sent, m_bfr, rv);
+
+      inf("Sync number is %d", sent.sync);
+      inf("Msg ID is      %d", sent.mgid);
+      inf("Size is        %d", sent.size);
+      inf("Timestamp is   %f", sent.timestamp);
+      inf("Src address    %d", sent.src);
+      inf("Src entity     %d", sent.src_ent);
+      inf("Dst address    %d", sent.dst);
+      inf("Dst entity     %d", sent.dst_ent);
     }
 
     union dconv_t
@@ -243,7 +262,6 @@ namespace Producer
 
         Delay::wait(4.0);
       }
-      m_serial->flush();
     }
   };
 }
