@@ -67,6 +67,8 @@ namespace Producer
     Poll m_poll;
     //! Task Arguments
     Arguments m_args;
+    //! Watchdog
+    Counter<float> m_wdog;
 
     //! Constructor.
     //! @param[in] name task name.
@@ -99,7 +101,6 @@ namespace Producer
       param("Serial Port - Baud Rate", m_args.uart_baud)
         .defaultValue("9600")
         .description("Serial port baud rate");
-      
     }
 
     //! Update internal state with new parameter values.
@@ -252,15 +253,18 @@ namespace Producer
     void
     onMain(void)
     {
+      m_wdog.setTop(4.0);
       while (!stopping())
       {
-        
-        if (m_args.udp_or_serial)
-          sendUDP();
-        else
-          sendSerial();
+        if (m_wdog.overflow())
+        {
+          if (m_args.udp_or_serial)
+            sendUDP();
+          else
+            sendSerial();
 
-        Delay::wait(4.0);
+          m_wdog.reset();
+        }
       }
     }
   };
