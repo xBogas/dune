@@ -30,6 +30,8 @@
 // DUNE headers.
 #include <DUNE/DUNE.hpp>
 
+#include "Echo.hpp"
+
 namespace Producer
 {
   //! Insert short task description here.
@@ -54,7 +56,7 @@ namespace Producer
 
     unsigned uart_baud;
   };
-  
+
   struct Task: public DUNE::Tasks::Task
   {
     //! Serialization buffer.
@@ -63,12 +65,12 @@ namespace Producer
     UDPSocket* m_sock;
     //! Serial Port
     SerialPort* m_serial;
-    //! I/O Multiplexer
-    Poll m_poll;
-    //! Task Arguments
+    //! Task Arguments.
     Arguments m_args;
-    //! Watchdog
+    //! Watchdog.
     Counter<float> m_wdog;
+    //! Serial Echo.
+    Reader* m_reader;
 
     //! Constructor.
     //! @param[in] name task name.
@@ -76,7 +78,8 @@ namespace Producer
     Task(const std::string& name, Tasks::Context& ctx):
       DUNE::Tasks::Task(name, ctx),
       m_sock(nullptr),
-      m_serial(nullptr)
+      m_serial(nullptr),
+      m_reader(nullptr)
     {
       param("Use UDP", m_args.udp_or_serial)
         .defaultValue("false")
@@ -106,20 +109,17 @@ namespace Producer
     //! Update internal state with new parameter values.
     void
     onUpdateParameters(void)
-    {
-    }
+    { }
 
     //! Reserve entity identifiers.
     void
     onEntityReservation(void)
-    {
-    }
+    { }
 
     //! Resolve entity names.
     void
     onEntityResolution(void)
-    {
-    }
+    { }
 
     //! Acquire resources.
     void
@@ -130,21 +130,23 @@ namespace Producer
         m_sock = new UDPSocket();
         m_sock->bind(m_args.src_port);
         m_sock->enableBroadcast(true);
+        m_reader = new Reader(this, m_sock);
+        m_reader->start();
         return;
       }
-      
+
       try
       {
         m_serial = new SerialPort(m_args.uart_dev, m_args.uart_baud);
         m_serial->setCanonicalInput(true);
         m_serial->flush();
-        m_poll.add(*m_serial);
+        m_reader = new Reader(this, m_serial);
+        m_reader->start();
       }
-      catch(const std::exception& e)
+      catch (const std::exception& e)
       {
         throw RestartNeeded(e.what(), 5);
       }
-      
     }
 
     //! Initialize resources.
@@ -160,11 +162,7 @@ namespace Producer
     onResourceRelease(void)
     {
       Memory::clear(m_sock);
-      if (m_serial)
-      {
-        m_poll.remove(*m_serial);
-        Memory::clear(m_serial);
-      }
+      Memory::clear(m_serial);
     }
 
     void
@@ -181,12 +179,14 @@ namespace Producer
         rv = IMC::Packet::serialize(&msg, m_bfr, c_bfr_size);
         m_sock->write(m_bfr, rv, m_args.board_ip.c_str(), m_args.dst_port);
       }
-      catch(const std::exception& e)
+      catch (const std::exception& e)
       {
-        war(DTR("failed sending msg %s to %s port %u: %s"), msg.getName(), m_args.board_ip.c_str(), m_args.dst_port, e.what());
+        war(DTR("failed sending msg %s to %s port %u: %s"), msg.getName(),
+            m_args.board_ip.c_str(), m_args.dst_port, e.what());
         return;
       }
-      inf("Send msg %s to %s :port %u", msg.getName(), m_args.board_ip.c_str(), m_args.dst_port);
+      inf("Send msg %s to %s :port %u", msg.getName(), m_args.board_ip.c_str(),
+          m_args.dst_port);
 
       IMC::Header sent;
       IMC::Packet::deserializeHeader(sent, m_bfr, rv);
@@ -206,54 +206,42 @@ namespace Producer
       double data;
       uint64_t bits;
     };
-    
+
     void
     sendSerial()
-    {      
-      IMC::SetPWM msg;
-      msg.id = 1;
-      msg.period = 1000;
-      msg.duty_cycle = 500;
+    {
+      return;
+      // IMC::SetPWM msg;
+      // msg.id = 1;
+      // msg.period = 1000;
+      // msg.duty_cycle = 500;
+
+      IMC::ClockControl msg;
+      msg.op = IMC::ClockControl::COP_SYNC_EXEC;
+      msg.clock = Clock::getSinceEpoch();
+      msg.tz = 0;
 
       uint16_t rv;
       try
       {
         rv = IMC::Packet::serialize(&msg, m_bfr, c_bfr_size);
-        //m_serial->write(m_bfr, rv);
-
-        //Sending only double to test conversion
-        dconv_t test;
-        test.data = -2e5;
-        memcpy(m_bfr, &(test.data), 8);
-        rv = 8;
         m_serial->write(m_bfr, rv);
-        
-        inf("Msg sent %lu", test.bits);
       }
-      catch(const std::exception& e)
+      catch (const std::exception& e)
       {
-        war(DTR("failed msg %s to send to %u: %s"), msg.getName(), m_args.dst_port, e.what());
+        war(DTR("failed msg %s to send to %u: %s"), msg.getName(),
+            m_args.dst_port, e.what());
         return;
       }
-      inf("Written %d bytes in msg %s to device %s", rv, msg.getName(), m_args.uart_dev.c_str());
-      /* IMC::Header sent;
-      IMC::Packet::deserializeHeader(sent, m_bfr, rv);
-
-      inf("Sync number is %d", sent.sync);
-      inf("Msg ID is      %d", sent.mgid);
-      inf("Size is        %d", sent.size);
-      inf("Timestamp is   %f", sent.timestamp);
-      inf("Src address    %d", sent.src);
-      inf("Src entity     %d", sent.src_ent);
-      inf("Dst address    %d", sent.dst);
-      inf("Dst entity     %d", sent.dst_ent); */
+      inf("Written %d bytes in msg %s to device %s", rv, msg.getName(),
+          m_args.uart_dev.c_str());
     }
 
     //! Main loop.
     void
     onMain(void)
     {
-      m_wdog.setTop(4.0);
+      m_wdog.setTop(7.0);
       while (!stopping())
       {
         if (m_wdog.overflow())
