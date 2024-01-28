@@ -30,8 +30,6 @@
 // DUNE headers.
 #include <DUNE/DUNE.hpp>
 
-#include "Echo.hpp"
-
 namespace Producer
 {
   //! Insert short task description here.
@@ -59,27 +57,19 @@ namespace Producer
 
   struct Task: public DUNE::Tasks::Task
   {
-    //! Serialization buffer.
-    uint8_t m_bfr[c_bfr_size];
-    //! UDP Socket.
-    UDPSocket* m_sock;
-    //! Serial Port
-    SerialPort* m_serial;
+    //! IO Handle.
+    IO::Handle* m_handle;
     //! Task Arguments.
     Arguments m_args;
     //! Watchdog.
     Counter<float> m_wdog;
-    //! Serial Echo.
-    Reader* m_reader;
 
     //! Constructor.
     //! @param[in] name task name.
     //! @param[in] ctx context.
     Task(const std::string& name, Tasks::Context& ctx):
       DUNE::Tasks::Task(name, ctx),
-      m_sock(nullptr),
-      m_serial(nullptr),
-      m_reader(nullptr)
+      m_handle(nullptr)
     {
       param("Use UDP", m_args.udp_or_serial)
         .defaultValue("false")
@@ -127,132 +117,143 @@ namespace Producer
     {
       if (m_args.udp_or_serial)
       {
-        m_sock = new UDPSocket();
-        m_sock->bind(m_args.src_port);
-        m_sock->enableBroadcast(true);
-        m_reader = new Reader(this, m_sock);
-        m_reader->start();
+        UDPSocket* sock;
+        sock = new UDPSocket();
+        sock->bind(m_args.src_port);
+        sock->enableBroadcast(true);
+        m_handle = sock;
         return;
       }
 
-      try
-      {
-        m_serial = new SerialPort(m_args.uart_dev, m_args.uart_baud);
-        m_serial->setCanonicalInput(true);
-        m_serial->flush();
-        m_reader = new Reader(this, m_serial);
-        m_reader->start();
-      }
-      catch (const std::exception& e)
-      {
-        throw RestartNeeded(e.what(), 5);
-      }
+      SerialPort* serial = new SerialPort(m_args.uart_dev, m_args.uart_baud);
+      serial->setCanonicalInput(true);
+      m_handle = serial;
     }
 
     //! Initialize resources.
     void
     onResourceInitialization(void)
     {
-      if (m_serial)
-        m_serial->flush();
+      if (m_handle)
+        m_handle->flush();
     }
 
     //! Release resources.
     void
     onResourceRelease(void)
     {
-      Memory::clear(m_sock);
-      Memory::clear(m_serial);
+      Memory::clear(m_handle);
     }
 
     void
-    sendUDP()
+    sendMessage(void)
     {
-      IMC::SetPWM msg;
-      msg.id = 1;
-      msg.period = 1000;
-      msg.duty_cycle = 500;
-
-      uint16_t rv;
-      try
-      {
-        rv = IMC::Packet::serialize(&msg, m_bfr, c_bfr_size);
-        m_sock->write(m_bfr, rv, m_args.board_ip.c_str(), m_args.dst_port);
-      }
-      catch (const std::exception& e)
-      {
-        war(DTR("failed sending msg %s to %s port %u: %s"), msg.getName(),
-            m_args.board_ip.c_str(), m_args.dst_port, e.what());
-        return;
-      }
-      inf("Send msg %s to %s :port %u", msg.getName(), m_args.board_ip.c_str(),
-          m_args.dst_port);
-
-      IMC::Header sent;
-      IMC::Packet::deserializeHeader(sent, m_bfr, rv);
-
-      inf("Sync number is %d", sent.sync);
-      inf("Msg ID is      %d", sent.mgid);
-      inf("Size is        %d", sent.size);
-      inf("Timestamp is   %f", sent.timestamp);
-      inf("Src address    %d", sent.src);
-      inf("Src entity     %d", sent.src_ent);
-      inf("Dst address    %d", sent.dst);
-      inf("Dst entity     %d", sent.dst_ent);
-    }
-
-    union dconv_t
-    {
-      double data;
-      uint64_t bits;
-    };
-
-    void
-    sendSerial()
-    {
-      return;
-      // IMC::SetPWM msg;
-      // msg.id = 1;
-      // msg.period = 1000;
-      // msg.duty_cycle = 500;
-
       IMC::ClockControl msg;
       msg.op = IMC::ClockControl::COP_SYNC_EXEC;
       msg.clock = Clock::getSinceEpoch();
       msg.tz = 0;
 
-      uint16_t rv;
       try
       {
+        uint8_t m_bfr[c_bfr_size];
+        uint16_t rv;
         rv = IMC::Packet::serialize(&msg, m_bfr, c_bfr_size);
-        m_serial->write(m_bfr, rv);
+        m_handle->write(m_bfr, rv);
       }
       catch (const std::exception& e)
       {
-        war(DTR("failed msg %s to send to %u: %s"), msg.getName(),
-            m_args.dst_port, e.what());
+        war(DTR("failed to send msg %s: %s"), msg.getName(), e.what());
         return;
       }
-      inf("Written %d bytes in msg %s to device %s", rv, msg.getName(),
-          m_args.uart_dev.c_str());
+
+      std::stringstream os;
+      msg.toText(os);
+      inf("Message sent: %s", os.str().c_str());
+    }
+
+    void
+    parseDebugMessage(uint8_t* bfr, uint16_t len)
+    {
+      std::string str((char*)&bfr[1], len - 1);
+      inf("debug message: %s", sanitize(str).c_str());
+    }
+
+    void
+    parseBuffer(uint8_t* bfr, uint16_t len)
+    {
+      if (bfr[0] == '$')  // Debug message
+      {
+        parseDebugMessage(bfr, len);
+        return;
+      }
+
+      try
+      {
+        IMC::Message* msg = IMC::Packet::deserialize(bfr, len);
+
+        std::stringstream os;
+        msg->toText(os);
+        inf("received message: %s", os.str().c_str());
+      }
+      catch (std::exception& e)
+      {
+        inf("error while unpacking message: %s", e.what());
+        std::string str((char*)bfr, len);
+        inf("buffer: %s", sanitize(str).c_str());
+      }
+    }
+
+    bool
+    waitSerial(void)
+    {
+      inf("waiting for Serial ...");
+      uint8_t bfr[c_bfr_size];
+      size_t i = 0;
+
+      while (!stopping())
+      {
+        if (!Poll::poll(*m_handle, 5.0))
+          continue;
+
+        size_t rv = m_handle->read(&bfr[i], 1);
+        i += rv;
+        if (bfr[i - 2] == '\r' && bfr[i - 1] == '\n')
+        {
+          parseBuffer(bfr, i);
+          return true;
+        }
+      }
+
+      m_handle->flush();
+      return false;
+    }
+
+    bool
+    waitUDP(void)
+    {
+      inf("waiting for UDP ...");
+      uint8_t bfr[c_bfr_size];
+
+      while (!stopping())
+      {
+        if (!Poll::poll(*m_handle, 5.0))
+          continue;
+
+        uint16_t rv = m_handle->read(bfr, c_bfr_size);
+        parseBuffer(bfr, rv);
+      }
+      
+      return false;
     }
 
     //! Main loop.
     void
     onMain(void)
     {
-      m_wdog.setTop(7.0);
       while (!stopping())
       {
-        if (m_wdog.overflow())
-        {
-          if (m_args.udp_or_serial)
-            sendUDP();
-          else
-            sendSerial();
-
-          m_wdog.reset();
-        }
+        if (m_args.udp_or_serial ? waitUDP() : waitSerial())
+          sendMessage();
       }
     }
   };
