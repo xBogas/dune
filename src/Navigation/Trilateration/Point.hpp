@@ -309,12 +309,12 @@ namespace Navigation
       }
 
       //! Print format
-      const char*
+      std::string
       print() const
       {
         std::stringstream str;
-        str << "Point " << this;
-        return str.str().c_str();
+        str << "Point " << *this;
+        return str.str();
       }
     };
 
