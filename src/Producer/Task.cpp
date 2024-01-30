@@ -40,6 +40,8 @@ namespace Producer
 
   static const int c_bfr_size = 65535;
 
+  static bool entityReservationDone = false;
+
   struct Arguments
   {
     bool udp_or_serial;
@@ -99,21 +101,89 @@ namespace Producer
     //! Update internal state with new parameter values.
     void
     onUpdateParameters(void)
-    { }
+    {
+      if (!paramChanged(m_args.udp_or_serial))
+        return;
+
+      // Create new handle to be able to reserve entities.
+      Memory::clear(m_handle);
+      createHandle();
+    }
 
     //! Reserve entity identifiers.
     void
     onEntityReservation(void)
-    { }
+    {
+      IMC::EntityList el;
+      el.op = IMC::EntityList::OP_QUERY;
+      el.setTimeStamp();
 
+      inf("sending message for Entity reservation");
+      sendMessage(&el);
+
+      IMC::Message* msg = nullptr;
+      while (!parseList(msg))
+      {
+        msg = m_args.udp_or_serial ? waitUDP() : waitSerial();
+      }
+
+      inf("Done Entity reservation!");
+      Memory::clear(msg);
+      entityReservationDone = true;
+    }
+
+    bool
+    parseList(IMC::Message* msg)
+    {
+      if (!msg)
+        return false;
+
+      if (msg->getId() != DUNE_IMC_ENTITYLIST)
+      {
+        war(DTR("unexpected message received: %s"), msg->getName());
+        return false;
+      }
+
+      IMC::EntityList* el = static_cast<IMC::EntityList*>(msg);
+      
+      std::vector<std::string> labels;
+      String::split(el->list, ";", labels);
+
+      el->list.clear();
+      el->op = IMC::EntityList::OP_REPORT;
+
+      try
+      {
+        unsigned id = reserveEntity(labels[0]);
+        el->list = labels[0];
+        el->list += "=";
+        el->list += std::to_string(id);
+
+        for (size_t i = 1; i < labels.size(); i++)
+        {
+          id = reserveEntity(labels[i]);
+          el->list += ";";
+          el->list += labels[i];
+          el->list += "=";
+          el->list += std::to_string(id);
+        }
+      }
+      catch(const std::exception& e)
+      {
+        std::cerr << e.what() << '\n';
+      }
+      
+      sendMessage(el);
+      return true;
+    }
+  
     //! Resolve entity names.
     void
     onEntityResolution(void)
     { }
 
-    //! Acquire resources.
     void
-    onResourceAcquisition(void)
+    createHandle(void)
     {
       if (m_args.udp_or_serial)
       {
@@ -126,8 +196,17 @@ namespace Producer
       }
 
       SerialPort* serial = new SerialPort(m_args.uart_dev, m_args.uart_baud);
-      serial->setCanonicalInput(true);
+      //serial->setCanonicalInput(true);
       m_handle = serial;
+    }
+    //! Acquire resources.
+    void
+    onResourceAcquisition(void)
+    {
+      if (m_handle)
+        return;
+
+      createHandle();
     }
 
     //! Initialize resources.
@@ -146,50 +225,58 @@ namespace Producer
     }
 
     void
-    sendMessage(void)
+    sendMessage(const IMC::Message* msg)
     {
-      IMC::ClockControl msg;
-      msg.op = IMC::ClockControl::COP_SYNC_EXEC;
-      msg.clock = Clock::getSinceEpoch();
-      msg.tz = 0;
+      IMC::ClockControl* ptr;
+
+      if(!msg)
+      {
+        ptr = new IMC::ClockControl(); // random message to test fp64_t
+        ptr->op = IMC::ClockControl::COP_SYNC_EXEC;
+        ptr->clock = Clock::getSinceEpoch();
+        ptr->tz = 0;
+        msg = ptr;
+      }
 
       try
       {
         uint8_t m_bfr[c_bfr_size];
         uint16_t rv;
-        rv = IMC::Packet::serialize(&msg, m_bfr, c_bfr_size);
+        rv = IMC::Packet::serialize(msg, m_bfr, c_bfr_size);
         m_handle->write(m_bfr, rv);
       }
       catch (const std::exception& e)
       {
-        war(DTR("failed to send msg %s: %s"), msg.getName(), e.what());
+        war(DTR("failed to send msg %s: %s"), msg->getName(), e.what());
         return;
       }
 
       std::stringstream os;
-      msg.toText(os);
+      msg->toText(os);
       inf("Message sent: %s", os.str().c_str());
+      Memory::clear(ptr);
     }
 
     void
     parseDebugMessage(uint8_t* bfr, uint16_t len)
     {
       std::string str((char*)&bfr[1], len - 1);
-      inf("debug message: %s", sanitize(str).c_str());
+      war("debug message: %s", sanitize(str).c_str());
     }
 
-    void
+    Message*
     parseBuffer(uint8_t* bfr, uint16_t len)
     {
       if (bfr[0] == '$')  // Debug message
       {
         parseDebugMessage(bfr, len);
-        return;
+        return nullptr;
       }
 
+      IMC::Message* msg = nullptr;
       try
       {
-        IMC::Message* msg = IMC::Packet::deserialize(bfr, len);
+        msg = IMC::Packet::deserialize(bfr, len);
 
         std::stringstream os;
         msg->toText(os);
@@ -200,10 +287,13 @@ namespace Producer
         inf("error while unpacking message: %s", e.what());
         std::string str((char*)bfr, len);
         inf("buffer: %s", sanitize(str).c_str());
+        msg = nullptr; // make sure we don't send a message
       }
+
+      return msg;
     }
 
-    bool
+    Message*
     waitSerial(void)
     {
       inf("waiting for Serial ...");
@@ -213,22 +303,23 @@ namespace Producer
       while (!stopping())
       {
         if (!Poll::poll(*m_handle, 5.0))
-          continue;
+          return nullptr;
 
-        size_t rv = m_handle->read(&bfr[i], 1);
+        size_t rv = m_handle->read(&bfr[i], c_bfr_size);
+        inf("read %ld bytes", rv);
         i += rv;
         if (bfr[i - 2] == '\r' && bfr[i - 1] == '\n')
         {
-          parseBuffer(bfr, i);
-          return true;
+          inf("message complete %ld bytes", i);
+          return parseBuffer(bfr, i);
         }
       }
 
       m_handle->flush();
-      return false;
+      return nullptr;
     }
 
-    bool
+    Message*
     waitUDP(void)
     {
       inf("waiting for UDP ...");
@@ -237,23 +328,28 @@ namespace Producer
       while (!stopping())
       {
         if (!Poll::poll(*m_handle, 5.0))
-          continue;
+          return nullptr;
 
         uint16_t rv = m_handle->read(bfr, c_bfr_size);
-        parseBuffer(bfr, rv);
+        return parseBuffer(bfr, rv);
       }
-      
-      return false;
+
+      return nullptr;
     }
 
     //! Main loop.
     void
     onMain(void)
     {
+      while (!entityReservationDone)
+      { }
+
       while (!stopping())
       {
+        consumeMessages();
+
         if (m_args.udp_or_serial ? waitUDP() : waitSerial())
-          sendMessage();
+          ;//sendMessage();
       }
     }
   };
