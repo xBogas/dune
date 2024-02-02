@@ -29,6 +29,7 @@
 
 // DUNE headers.
 #include <DUNE/DUNE.hpp>
+#include "Reader.hpp"
 
 namespace Producer
 {
@@ -130,6 +131,8 @@ namespace Producer
       inf("Done Entity reservation!");
       Memory::clear(msg);
       entityReservationDone = true;
+      Reader* reader = new Reader(this, m_handle);
+      reader->start();
     }
 
     bool
@@ -227,7 +230,7 @@ namespace Producer
     void
     sendMessage(const IMC::Message* msg)
     {
-      IMC::ClockControl* ptr;
+      IMC::ClockControl* ptr = nullptr;
 
       if(!msg)
       {
@@ -348,8 +351,12 @@ namespace Producer
       {
         consumeMessages();
 
-        if (m_args.udp_or_serial ? waitUDP() : waitSerial())
-          ;//sendMessage();
+        std::cin.get();
+        IMC::EntityList el;
+        el.list = "DUNE";
+        el.list += "=";
+        el.list += std::to_string(0);
+        sendMessage(&el);
       }
     }
   };
