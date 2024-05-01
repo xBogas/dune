@@ -31,6 +31,8 @@
 #include "Reader.hpp"
 #include <DUNE/DUNE.hpp>
 
+#include <thread>
+
 namespace Producer
 {
   //! Insert short task description here.
@@ -78,6 +80,8 @@ namespace Producer
         .defaultValue("5.0")
         .units(Units::Second)
         .description("Input timeout");
+
+      setWaitForMessages(0.1);
     }
 
     //! Update internal state with new parameter values.
@@ -267,10 +271,18 @@ namespace Producer
     sendHeartBeat(void)
     {
       IMC::QueryEntityParameters msg;
+      msg.setTimeStamp();
       msg.name = "all";
       sendMessage(&msg);
+
+      // If it is a one time only message
+      // Wait 3 seconds for incoming messages
+      // and then exit
       if (m_args.inp_tout == 0)
-        exit(0);
+        std::thread([]() {
+          Delay::wait(3);
+          exit(0);
+        }).detach();
     }
 
     void
@@ -293,10 +305,6 @@ namespace Producer
       try
       {
         msg = IMC::Packet::deserialize(bfr, len);
-
-        std::stringstream os;
-        msg->toText(os);
-        inf("received message: %s", os.str().c_str());
       }
       catch (std::exception& e)
       {
@@ -314,15 +322,20 @@ namespace Producer
     {
       inf("reporting entity: %s", msg->name.c_str());
 
+      std::stringstream ss;
+      ss << "\n";
+      ss << "Entity: [" << msg->name << "] Parameters:";
       for (auto i : msg->params)
-      {
-        inf("param: %s = %s", i->name.c_str(), i->value.c_str());
-      }
+        ss << "\n" << i->name << " = " << i->value;
+
+      inf("%s", ss.str().c_str());
     }
 
     void
     parseData(void)
     {
+      inf("parsing data");
+
       uint8_t bfr[c_bfr_size];
 
       uint16_t rv = m_handle->read(bfr, c_bfr_size);
@@ -343,13 +356,13 @@ namespace Producer
     bool
     onReadData(void) override
     {
-      if (m_wdog.overflow())
+      if (m_wdog.overflow() && m_wdog.getTop() != 0)
       {
         m_wdog.reset();
         sendHeartBeat();
       }
 
-      if (Poll::poll(*m_handle, 0.01))
+      if (Poll::poll(*m_handle, 0.5))
         parseData();
 
       return true;
