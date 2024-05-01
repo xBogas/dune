@@ -28,8 +28,8 @@
 //***************************************************************************
 
 // DUNE headers.
-#include <DUNE/DUNE.hpp>
 #include "Reader.hpp"
+#include <DUNE/DUNE.hpp>
 
 namespace Producer
 {
@@ -41,98 +41,77 @@ namespace Producer
 
   static const int c_bfr_size = 65535;
 
-  static bool entityReservationDone = false;
-
   struct Arguments
   {
-    bool udp_or_serial;
-
-    uint16_t src_port;
-
-    uint16_t dst_port;
-
-    std::string board_ip;
-
-    std::string uart_dev;
-
-    unsigned uart_baud;
+    //! Io device.
+    std::string io_dev;
+    //! Input timeout.
+    double inp_tout;
   };
 
-  struct Task: public DUNE::Tasks::Task
+  struct Task: public Hardware::BasicDeviceDriver
   {
     //! IO Handle.
     IO::Handle* m_handle;
     //! Task Arguments.
     Arguments m_args;
     //! Watchdog.
-    Counter<float> m_wdog;
+    Time::Counter<double> m_wdog;
 
     //! Constructor.
     //! @param[in] name task name.
     //! @param[in] ctx context.
     Task(const std::string& name, Tasks::Context& ctx):
-      DUNE::Tasks::Task(name, ctx),
+      DUNE::Hardware::BasicDeviceDriver(name, ctx),
       m_handle(nullptr)
     {
-      param("Use UDP", m_args.udp_or_serial)
-        .defaultValue("false")
-        .description("Select communication method with the board");
+      paramActive(Tasks::Parameter::SCOPE_GLOBAL,
+                  Tasks::Parameter::VISIBILITY_USER, true);
 
-      param("UDP Port", m_args.src_port)
-        .defaultValue("1111")
-        .description("UDP port used to communicate with the board");
+      param("IO Port - Device", m_args.io_dev)
+        .defaultValue("")
+        .description("IO device URI in the form \"tcp://ADDRESS:PORT\" "
+                     "or \"uart://DEVICE:BAUD\" "
+                     "or \"udp://ADDRESS:PORT\"");
 
-      param("Board Port", m_args.dst_port)
-        .defaultValue("8080")
-        .description("Board UDP port");
-
-      param("Board IP", m_args.board_ip)
-        .defaultValue("10.0.2.83")
-        .description("Board IPv4");
-
-      param("Serial Port", m_args.uart_dev)
-        .defaultValue("/dev/ttyACM0")
-        .description("Serial port device used to communicate with the board");
-
-      param("Serial Port - Baud Rate", m_args.uart_baud)
-        .defaultValue("9600")
-        .description("Serial port baud rate");
+      param("Input Timeout", m_args.inp_tout)
+        .defaultValue("5.0")
+        .units(Units::Second)
+        .description("Input timeout");
     }
 
     //! Update internal state with new parameter values.
     void
     onUpdateParameters(void)
     {
-      if (!paramChanged(m_args.udp_or_serial))
-        return;
-
-      // Create new handle to be able to reserve entities.
-      Memory::clear(m_handle);
-      createHandle();
+      if (paramChanged(m_args.io_dev))
+      {
+        m_wdog.setTop(m_args.inp_tout);
+      }
     }
 
     //! Reserve entity identifiers.
     void
     onEntityReservation(void)
     {
-      IMC::EntityList el;
-      el.op = IMC::EntityList::OP_QUERY;
-      el.setTimeStamp();
+      // IMC::EntityList el;
+      // el.op = IMC::EntityList::OP_QUERY;
+      // el.setTimeStamp();
 
-      inf("sending message for Entity reservation");
-      sendMessage(&el);
+      // inf("sending message for Entity reservation");
+      // sendMessage(&el);
 
-      IMC::Message* msg = nullptr;
-      while (!parseList(msg))
-      {
-        msg = m_args.udp_or_serial ? waitUDP() : waitSerial();
-      }
+      // IMC::Message* msg = nullptr;
+      // while (!parseList(msg))
+      // {
+      //   msg = m_args.udp_or_serial ? waitUDP() : waitSerial();
+      // }
 
-      inf("Done Entity reservation!");
-      Memory::clear(msg);
-      entityReservationDone = true;
-      Reader* reader = new Reader(this, m_handle);
-      reader->start();
+      // inf("Done Entity reservation!");
+      // Memory::clear(msg);
+      // entityReservationDone = true;
+      // Reader* reader = new Reader(this, m_handle);
+      // reader->start();
     }
 
     bool
@@ -148,7 +127,7 @@ namespace Producer
       }
 
       IMC::EntityList* el = static_cast<IMC::EntityList*>(msg);
-      
+
       std::vector<std::string> labels;
       String::split(el->list, ";", labels);
 
@@ -171,60 +150,86 @@ namespace Producer
           el->list += std::to_string(id);
         }
       }
-      catch(const std::exception& e)
+      catch (const std::exception& e)
       {
         std::cerr << e.what() << '\n';
       }
-      
+
       sendMessage(el);
       return true;
     }
-  
+
     //! Resolve entity names.
     void
     onEntityResolution(void)
     { }
 
-    void
-    createHandle(void)
+    bool
+    openUDP(std::string& uri)
     {
-      if (m_args.udp_or_serial)
+      char addr[128];
+      int dst_port;
+      if (std::sscanf(uri.c_str(), "udp://%[^:]:%d", addr, &dst_port) != 2)
+        return false;
+
+      UDPSocket* sock = new UDPSocket();
+      for (uint16_t offset = 0; offset < 10; offset++)
       {
-        UDPSocket* sock;
-        sock = new UDPSocket();
-        sock->bind(m_args.src_port);
-        sock->enableBroadcast(true);
-        m_handle = sock;
-        return;
+        uint16_t port = 5000 + offset;
+        try
+        {
+          Address local = Address("10.0.2.80");
+          inf("interfacing with %s:%d", local.c_str(), port);
+
+          sock->bind(port, local);
+          sock->enableBroadcast(true);
+          break;
+        }
+        catch (std::runtime_error& e)
+        {
+          war("%s", e.what());
+        }
+      }
+      sock->connect(addr, dst_port);
+
+      m_handle = sock;
+
+      return true;
+    }
+
+    //! Acquire resources.
+    bool
+    onConnect(void)
+    {
+      if (openUDP(m_args.io_dev))
+        return true;
+
+      try
+      {
+        m_handle = openDeviceHandle(m_args.io_dev);
+        m_handle->flush();
+      }
+      catch (std::runtime_error& e)
+      {
+        err(DTR("failed to open device: %s"), e.what());
+        return false;
       }
 
-      SerialPort* serial = new SerialPort(m_args.uart_dev, m_args.uart_baud);
-      //serial->setCanonicalInput(true);
-      m_handle = serial;
-    }
-    //! Acquire resources.
-    void
-    onResourceAcquisition(void)
-    {
-      if (m_handle)
-        return;
-
-      createHandle();
+      return true;
     }
 
-    //! Initialize resources.
+    //! Disconnect from device.
     void
-    onResourceInitialization(void)
-    {
-      if (m_handle)
-        m_handle->flush();
-    }
-
-    //! Release resources.
-    void
-    onResourceRelease(void)
+    onDisconnect(void) override
     {
       Memory::clear(m_handle);
+    }
+
+    void
+    onInitializeDevice(void) override
+    {
+      sendHeartBeat();
+      m_wdog.setTop(m_args.inp_tout);
     }
 
     void
@@ -232,9 +237,9 @@ namespace Producer
     {
       IMC::ClockControl* ptr = nullptr;
 
-      if(!msg)
+      if (!msg)
       {
-        ptr = new IMC::ClockControl(); // random message to test fp64_t
+        ptr = new IMC::ClockControl();  // random message to test fp64_t
         ptr->op = IMC::ClockControl::COP_SYNC_EXEC;
         ptr->clock = Clock::getSinceEpoch();
         ptr->tz = 0;
@@ -254,10 +259,18 @@ namespace Producer
         return;
       }
 
-      std::stringstream os;
-      msg->toText(os);
-      inf("Message sent: %s", os.str().c_str());
+      inf("Message sent: %s", msg->getName());
       Memory::clear(ptr);
+    }
+
+    void
+    sendHeartBeat(void)
+    {
+      IMC::QueryEntityParameters msg;
+      msg.name = "all";
+      sendMessage(&msg);
+      if (m_args.inp_tout == 0)
+        exit(0);
     }
 
     void
@@ -290,74 +303,56 @@ namespace Producer
         inf("error while unpacking message: %s", e.what());
         std::string str((char*)bfr, len);
         inf("buffer: %s", sanitize(str).c_str());
-        msg = nullptr; // make sure we don't send a message
+        msg = nullptr;  // make sure we don't send a message
       }
 
       return msg;
     }
 
-    Message*
-    waitSerial(void)
-    {
-      inf("waiting for Serial ...");
-      uint8_t bfr[c_bfr_size];
-      size_t i = 0;
-
-      while (!stopping())
-      {
-        if (!Poll::poll(*m_handle, 5.0))
-          return nullptr;
-
-        size_t rv = m_handle->read(&bfr[i], c_bfr_size);
-        inf("read %ld bytes", rv);
-        i += rv;
-        if (bfr[i - 2] == '\r' && bfr[i - 1] == '\n')
-        {
-          inf("message complete %ld bytes", i);
-          return parseBuffer(bfr, i);
-        }
-      }
-
-      m_handle->flush();
-      return nullptr;
-    }
-
-    Message*
-    waitUDP(void)
-    {
-      inf("waiting for UDP ...");
-      uint8_t bfr[c_bfr_size];
-
-      while (!stopping())
-      {
-        if (!Poll::poll(*m_handle, 5.0))
-          return nullptr;
-
-        uint16_t rv = m_handle->read(bfr, c_bfr_size);
-        return parseBuffer(bfr, rv);
-      }
-
-      return nullptr;
-    }
-
-    //! Main loop.
     void
-    onMain(void)
+    reportEntity(const IMC::EntityParameters* msg)
     {
-      while (!entityReservationDone)
-      { }
+      inf("reporting entity: %s", msg->name.c_str());
 
-      while (!stopping())
+      for (auto i : msg->params)
       {
-        consumeMessages();
-
-        std::cin.get();
-        IMC::EntityList el;
-        el.list = "DUNE";
-        el.list += "=";
-        el.list += std::to_string(0);
-        sendMessage(&el);
+        inf("param: %s = %s", i->name.c_str(), i->value.c_str());
       }
+    }
+
+    void
+    parseData(void)
+    {
+      uint8_t bfr[c_bfr_size];
+
+      uint16_t rv = m_handle->read(bfr, c_bfr_size);
+      IMC::Message* msg = parseBuffer(bfr, rv);
+      if (msg)
+      {
+        inf("received message: %s", msg->getName());
+        if (msg->getId() == IMC::EntityParameters::getIdStatic())
+          reportEntity(static_cast<IMC::EntityParameters*>(msg));
+      }
+
+      Memory::clear(msg);
+    }
+
+    //! Check for input timeout.
+    //! Data is read in the DevDataText consume.
+    //! @return true.
+    bool
+    onReadData(void) override
+    {
+      if (m_wdog.overflow())
+      {
+        m_wdog.reset();
+        sendHeartBeat();
+      }
+
+      if (Poll::poll(*m_handle, 0.01))
+        parseData();
+
+      return true;
     }
   };
 }
