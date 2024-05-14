@@ -84,6 +84,8 @@ namespace Transports
       Arguments m_args;
       //! Active transmission request.
       TxRequest* m_tx_request;
+      //! Iridium Subscription List
+      std::list<unsigned> m_subscriptions;
 
       //! Constructor.
       //! @param[in] name task name.
@@ -282,13 +284,20 @@ namespace Transports
 
         unsigned src_adr = msg->getSource();
         unsigned src_eid = msg->getSourceEntity();
-        TxRequest* request = new TxRequest(src_adr, src_eid, msg->req_id,
-                                           msg->ttl, 
-                                           getIridiumSerial(msg->destination),
-                                           msg->data);
+        TxRequest* request = new TxRequest(src_adr, src_eid, msg->req_id, msg->ttl,
+                                           getIridiumSerial(msg->destination), msg->data);
 
         enqueueTxRequest(request);
         sendTxRequestStatus(request, IMC::IridiumTxStatus::TXSTATUS_QUEUED);
+
+        for (auto&& serial_id : m_subscriptions)
+        {
+          TxRequest* sub_req =
+            new TxRequest(src_adr, src_eid, msg->req_id, msg->ttl, serial_id, msg->data);
+
+          enqueueTxRequest(sub_req);
+          sendTxRequestStatus(sub_req, IMC::IridiumTxStatus::TXSTATUS_QUEUED);
+        }
       }
 
       void
@@ -350,10 +359,64 @@ namespace Transports
         m_tx_request->invalidateMSN();
 
         sendTxRequestStatus(m_tx_request, IMC::IridiumTxStatus::TXSTATUS_ERROR,
-            String::str(DTR("failed with error %u"), err_code));
+                            String::str(DTR("failed with error %u"), err_code));
 
         enqueueTxRequest(m_tx_request);
         m_tx_request = NULL;
+      }
+
+      //! Get the subscription ID from the message
+      //! @param[in] data message data
+      //! @return subscription ID or 0 if not found
+      unsigned
+      getSubscribeId(const std::vector<uint8_t>& data, bool& is_sub)
+      {
+        is_sub = false;
+
+        //? What is the subscription msg format?
+        if (data[0] != 'S' && data[1] != 'B')
+          return 0;
+
+        unsigned id = 0;
+        try
+        {
+          id = std::stoul((char*)&data[2]);
+        }
+        catch (const std::exception& e)
+        {
+          err(DTR("Invalid subscription message %s"), e.what());
+        }
+
+        is_sub = true;
+        return id;
+      }
+
+      bool
+      parseSubscription(const std::vector<uint8_t>& data)
+      {
+        bool is_sub = true;
+        unsigned sub_id = getSubscribeId(data, is_sub);
+
+        // Not a subscription message
+        if (sub_id == 0)
+          return false;
+
+        auto it = std::find(m_subscriptions.begin(), m_subscriptions.end(), sub_id);
+        if (it != m_subscriptions.end())
+        {
+          // Value in the list
+          if (is_sub)
+            return true;
+
+          m_subscriptions.erase(it);
+          return true;
+        }
+
+        // Value not in the list
+        m_subscriptions.push_back(sub_id);
+        inf(DTR("Subscription added: %u"), sub_id);
+
+        return true;
       }
 
       void
@@ -370,6 +433,9 @@ namespace Transports
 
         std::vector<uint8_t> stripped;
         stripIridiumSerial(bfr, rv, stripped);
+
+        if (parseSubscription(stripped))
+          return;
 
         if (stripped.size() > 0)
         {
