@@ -54,8 +54,6 @@ namespace Supervisors
       IO::Handle* m_handle;
       //! Task arguments.
       Arguments m_args;
-      //! MCU Parameters.
-      std::vector<IMC::EntityParameters*> m_dev_params;
       //! MCU Number Labels.
       unsigned m_num_labels;
 
@@ -92,6 +90,8 @@ namespace Supervisors
       bool
       onWriteParamsXML(std::ostream& os) const
       {
+        // This method cannot be const
+        // so we cast the const away :)
         Task* non_const = const_cast<Task*>(this);
         return non_const->WriteMCUParams(os);
       }
@@ -106,6 +106,8 @@ namespace Supervisors
         IMC::QueryEntityParameters query;
         query.name = "all";
         sendMessage(query);
+
+        std::vector<IMC::EntityParameters*> m_dev_params;
 
         Counter<double> timer(10.0);
         while (!timer.overflow())
