@@ -103,16 +103,14 @@ namespace Supervisors
 
         using DUNE::Utils::XML;
 
-        IMC::QueryEntityParameters query;
-        query.name = "all";
-        sendMessage(query);
+        queryMCUParams();
 
-        std::vector<IMC::EntityParameters*> m_dev_params;
+        std::vector<IMC::EntityParameters*> dev_params;
 
         Counter<double> timer(10.0);
         while (!timer.overflow())
         {
-          if (m_num_labels <= m_dev_params.size())
+          if (m_num_labels <= dev_params.size())
             break;
 
           IMC::Message* msg = waitMessage(1.0);
@@ -126,10 +124,10 @@ namespace Supervisors
           }
 
           IMC::EntityParameters* ep = static_cast<IMC::EntityParameters*>(msg);
-          m_dev_params.push_back(ep);
+          dev_params.push_back(ep);
         }
 
-        for (auto entity : m_dev_params)
+        for (auto entity : dev_params)
         {
           spew("Entity %s", entity->name.c_str());
 
@@ -217,11 +215,44 @@ namespace Supervisors
           Memory::clear(el_report);
 
           reserveLabels(labels);
+          break;
+        }
+
+        // Wait for Subscription List
+        while (!timer.overflow())
+        {
+          msg = waitMessage(1.0);
+          if (msg == nullptr)
+            continue;
+
+          if (msg->getId() != SessionSubscription::getIdStatic())
+          {
+            trace("received %s while waiting for session sub", msg->getName());
+            Memory::clear(msg);
+          }
+
+          parseSubscription(msg);
+          Memory::clear(msg);
           return;
         }
 
         err("Timeout waiting for MCU to respond");
-        exit(1);
+      }
+
+      void
+      parseSubscription(IMC::Message* msg)
+      {
+        SessionSubscription* sub = static_cast<SessionSubscription*>(msg);
+        spew("sub request %s", sub->messages.c_str());
+
+
+        std::vector<std::string> msg_ids;
+        String::split(sub->messages, ";", msg_ids);
+        for (size_t i = 0; i < msg_ids.size(); i++)
+        {
+          if (!msg_ids[i].empty())
+            bind(std::stoi(msg_ids[i]), new Consumer<Task, IMC::Message>(*this, &Task::consumeToMCU));
+        }
       }
 
       //! Reserve entity identifiers for MCU labels.
@@ -252,25 +283,42 @@ namespace Supervisors
           err("%s", e.what());
         }
 
+        spew("Sending Entity List Report");
         sendMessage(el);
       }
 
       void
       onQueryEntityParameters(const IMC::QueryEntityParameters* msg)
       {
-        spew("Query %s", msg->name.c_str());
         if (msg->name != getEntityLabel())
           return;
 
         Task::onQueryEntityParameters(msg);
-        IMC::QueryEntityParameters* to_send = const_cast<IMC::QueryEntityParameters*>(msg);
-        sendMessage(to_send);
-      }
+        queryMCUParams();
 
-      //! Resolve entity names.
-      void
-      onEntityResolution(void)
-      { }
+        Counter<double> timer(10.0);
+        unsigned sent = 0;
+        while (!timer.overflow())
+        {
+          if (sent >= m_num_labels)
+            return;
+
+          IMC::Message* recv = waitMessage(1.0);
+          if (recv == nullptr)
+            continue;
+
+          if (recv->getId() != IMC::EntityParameters::getIdStatic())
+          {
+            Memory::clear(recv);
+            continue;
+          }
+
+          IMC::EntityParameters* ep = static_cast<IMC::EntityParameters*>(recv);
+          spew("Dispatching params %s", ep->name.c_str());
+          dispatch(ep, DF_KEEP_TIME | DF_KEEP_SRC_EID);
+          sent++;
+        }
+      }
 
       IO::Handle*
       createSerial(const char* dev, const char* arg)
@@ -363,10 +411,7 @@ namespace Supervisors
       {
         char bfr[65535];
         if (!Poll::poll(*m_handle, timeout))
-        {
-          trace("Timeout waiting for message");
           return nullptr;
-        }
 
         size_t rv = m_handle->read(bfr, sizeof(bfr));
         if (rv <= 0)
@@ -376,7 +421,6 @@ namespace Supervisors
         }
 
         IMC::Message* msg = nullptr;
-        spew("Received %ld bytes", rv);
         try
         {
           msg = IMC::Packet::deserialize((uint8_t*)bfr, rv);
@@ -392,15 +436,31 @@ namespace Supervisors
           return nullptr;
         }
 
-        if (msg != nullptr)
-          spew("Received message %s", msg->getName());
-
+        spew("Received message %s", msg->getName());
         return msg;
+      }
+
+      void
+      queryMCUParams(void)
+      {
+        spew("Querying MCU parameters");
+        IMC::QueryEntityParameters query;
+        query.name = "all";
+        sendMessage(query);
+      }
+
+      void
+      consumeToMCU(const IMC::Message* msg)
+      {
+        sendMessage(const_cast<IMC::Message*>(msg));
       }
 
       void
       sendMessage(IMC::Message* msg)
       {
+        if (msg->getDestination() != getSystemId())
+          return;
+
         sendMessage(*msg);
       }
 
@@ -424,20 +484,29 @@ namespace Supervisors
       void
       checkInput(void)
       {
-        IMC::Message* msg = waitMessage(5.0);
-        if (msg == nullptr)
-          return;
-
-        dispatch(msg);
+        IMC::Message* msg = waitMessage(0);
+        while (msg != nullptr)
+        {
+          dispatch(msg);
+          msg = waitMessage(0);
+        }
       }
 
       //! Main loop.
       void
       onMain(void)
       {
+        Counter<double> clock_sync(m_args.clock_sync);
+        Counter<double> query_params(m_args.clock_sync);
         while (!stopping())
         {
-          waitForMessages(1.0);
+          waitForMessages(0.1);
+          if (query_params.overflow())
+          {
+            queryMCUParams();
+            query_params.reset();
+          }
+
           checkInput();
         }
       }
