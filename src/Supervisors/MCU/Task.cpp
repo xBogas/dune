@@ -30,6 +30,8 @@
 // DUNE headers.
 #include <DUNE/DUNE.hpp>
 
+#include "DevHandles.hpp"
+
 namespace Supervisors
 {
   //! Insert short task description here.
@@ -46,24 +48,37 @@ namespace Supervisors
       std::string io_dev;
       //! Synchronize MCU clock with DUNE.
       unsigned clock_sync;
+      //! MCU System Name.
+      std::string sys_name;
     };
 
     struct Task: public DUNE::Tasks::Task
     {
+      //! Factory for creating IO Handles.
+      DevHandles m_factory;
       //! IO Handle.
       IO::Handle* m_handle;
       //! Task arguments.
       Arguments m_args;
       //! MCU Number Labels.
       unsigned m_num_labels;
+      //! MCU consumers flag.
+      bool m_mcu_callbacks;
+      //! Buffer for incoming messages.
+      char m_bfr[65535];
+      //! Position in buffer.
+      size_t m_bfr_pos;
 
       //! Constructor.
       //! @param[in] name task name.
       //! @param[in] ctx context.
       Task(const std::string& name, Tasks::Context& ctx):
         DUNE::Tasks::Task(name, ctx),
+        m_factory(this),
         m_handle(nullptr),
-        m_num_labels(0)
+        m_num_labels(0),
+        m_mcu_callbacks(false),
+        m_bfr_pos(0)
       {
         param("IO Handle", m_args.io_dev)
           .description("IO Handle with uri type:/dev:/arg to interface with MCU");
@@ -71,6 +86,12 @@ namespace Supervisors
         param("Clock Sync Period (s)", m_args.clock_sync)
           .defaultValue("10")
           .description("Synchronize MCU clock with DUNE");
+
+        param("MCU System Name", m_args.sys_name)
+          .defaultValue("MCU")
+          .description("System name used by MCU on announce message");
+
+        bind<IMC::Announce>(this);
       }
 
       //! Destructor.
@@ -84,7 +105,10 @@ namespace Supervisors
       onUpdateParameters(void)
       {
         if (paramChanged(m_args.io_dev))
-          updateHandle();
+        {
+          Memory::clear(m_handle);
+          m_handle = m_factory.createHandle(m_args.io_dev.c_str());
+        }
       }
 
       bool
@@ -188,6 +212,8 @@ namespace Supervisors
       void
       onEntityReservation(void)
       {
+        m_handle->flush();
+
         EntityList el;
         el.op = IMC::EntityList::OP_QUERY;
 
@@ -196,7 +222,7 @@ namespace Supervisors
         while (!timer.overflow())
         {
           debug("Sending Entity List Query");
-          sendMessage(el);
+          sendMessage(&el);
 
           msg = waitMessage(1.0);
           if (msg == nullptr)
@@ -242,17 +268,25 @@ namespace Supervisors
       void
       parseSubscription(IMC::Message* msg)
       {
+        if (m_mcu_callbacks)
+        {
+          spew("consumers to MCU already set");
+          return;
+        }
+
         SessionSubscription* sub = static_cast<SessionSubscription*>(msg);
         spew("sub request %s", sub->messages.c_str());
-
 
         std::vector<std::string> msg_ids;
         String::split(sub->messages, ";", msg_ids);
         for (size_t i = 0; i < msg_ids.size(); i++)
         {
           if (!msg_ids[i].empty())
-            bind(std::stoi(msg_ids[i]), new Consumer<Task, IMC::Message>(*this, &Task::consumeToMCU));
+            bind(std::stoi(msg_ids[i]),
+                 new Consumer<Task, IMC::Message>(*this, &Task::consumeToMCU));
         }
+
+        m_mcu_callbacks = true;
       }
 
       //! Reserve entity identifiers for MCU labels.
@@ -264,27 +298,37 @@ namespace Supervisors
         EntityList el;
         el.op = EntityList::OP_REPORT;
 
+        el.list = "";
+        for (unsigned i = 0; i < labels.size(); ++i)
+        {
+          unsigned id = getEntityID(labels[i]);
+          m_num_labels++;
+
+          el.list += labels[i];
+          el.list += "=";
+          el.list += std::to_string(id);
+          el.list += ";";
+        }
+
+        spew("Entity List Report %s", el.list.c_str());
+        sendMessage(&el);
+      }
+
+      unsigned
+      getEntityID(const std::string& label)
+      {
+        unsigned id = 0;
         try
         {
-          el.list = "";
-          for (unsigned i = 0; i < labels.size(); ++i)
-          {
-            unsigned id = reserveEntity(labels[i]);
-            m_num_labels++;
-
-            el.list += labels[i];
-            el.list += "=";
-            el.list += std::to_string(id);
-            el.list += ";";
-          }
+          id = resolveEntity(label);
         }
-        catch (const std::exception& e)
+        catch (...)
         {
-          err("%s", e.what());
+          debug("Reserving entity %s", label.c_str());
+          id = reserveEntity(label);
         }
 
-        spew("Sending Entity List Report");
-        sendMessage(el);
+        return id;
       }
 
       void
@@ -320,110 +364,29 @@ namespace Supervisors
         }
       }
 
-      IO::Handle*
-      createSerial(const char* dev, const char* arg)
-      {
-        debug("creating serial %s::%s", dev, arg);
-
-        unsigned baud = std::stoul(arg);
-        SerialPort* serial = new SerialPort(dev, baud);
-
-        return serial;
-      }
-
-      IO::Handle*
-      createSocketTCP(const char* addr, const char* arg)
-      {
-        debug("Creating tcp to %s::%s", addr, arg);
-
-        TCPSocket* sock = nullptr;
-        try
-        {
-          unsigned port = std::stoul(arg);
-          sock = new TCPSocket();
-          sock->setKeepAlive(true);
-          sock->setNoDelay(true);
-          sock->setSendTimeout(1.0);
-          sock->setReceiveTimeout(1.0);
-          sock->connect(addr, port);
-        }
-        catch (const std::exception& e)
-        {
-          err("%s", e.what());
-        }
-
-        return sock;
-      }
-
-      IO::Handle*
-      createSocketUDP(const char* addr, const char* arg)
-      {
-        debug("Creating udp to %s::%s", addr, arg);
-
-        UDPSocket* sock = nullptr;
-        try
-        {
-          unsigned port = std::stoul(arg);
-          sock = new UDPSocket();
-          sock->enableBroadcast(true);
-          sock->bind(5000);
-          sock->connect(addr, port);
-
-          debug("Listening on %s:%u", addr, port);
-        }
-        catch (const std::exception& e)
-        {
-          err("%s", e.what());
-        }
-
-        return sock;
-      }
-
-      void
-      updateHandle(void)
-      {
-        char comms[64];
-        char dev[64];
-        char arg[64];
-        if (std::sscanf(m_args.io_dev.c_str(), "%63[^:]:/%63[^:]:/%63s", comms, dev, arg) != 3)
-          throw std::runtime_error("Invalid handle (type:/dev:/arg): " + m_args.io_dev);
-
-        Memory::clear(m_handle);
-        if (!strcmp(comms, "serial"))
-          m_handle = createSerial(dev, arg);
-        else if (!strcmp(comms, "udp"))
-          m_handle = createSocketUDP(dev, arg);
-        else if (!strcmp(comms, "tcp"))
-          m_handle = createSocketTCP(dev, arg);
-        else if (!strcmp(comms, "can"))
-        {
-          unsigned can_type = std::stoul(arg);
-          m_handle = new SocketCAN(dev, (SocketCAN::can_frame_t)can_type);
-        }
-        else
-        {
-          throw std::runtime_error("Unknown handle " + m_args.io_dev);
-        }
-      }
-
       IMC::Message*
       waitMessage(double timeout)
       {
-        char bfr[65535];
         if (!Poll::poll(*m_handle, timeout))
           return nullptr;
 
-        size_t rv = m_handle->read(bfr, sizeof(bfr));
+        size_t rv = m_handle->read(&m_bfr[m_bfr_pos], sizeof(m_bfr) - m_bfr_pos);
         if (rv <= 0)
+          return nullptr;
+
+        spew("Read %lu bytes", rv);
+        m_bfr_pos += rv;
+        if (m_bfr_pos >= sizeof(m_bfr))
         {
-          war("IO error - received %ld bytes", rv);
+          err("Buffer overflow");
+          m_bfr_pos = 0;
           return nullptr;
         }
 
         IMC::Message* msg = nullptr;
         try
         {
-          msg = IMC::Packet::deserialize((uint8_t*)bfr, rv);
+          msg = IMC::Packet::deserialize((uint8_t*)m_bfr, m_bfr_pos);
         }
         catch (const std::exception& e)
         {
@@ -436,7 +399,8 @@ namespace Supervisors
           return nullptr;
         }
 
-        spew("Received message %s", msg->getName());
+        m_bfr_pos = 0;
+        spew("message %s from %d", msg->getName(), msg->getSourceEntity());
         return msg;
       }
 
@@ -446,7 +410,7 @@ namespace Supervisors
         spew("Querying MCU parameters");
         IMC::QueryEntityParameters query;
         query.name = "all";
-        sendMessage(query);
+        sendMessage(&query);
       }
 
       void
@@ -461,17 +425,11 @@ namespace Supervisors
         if (msg->getDestination() != getSystemId())
           return;
 
-        sendMessage(*msg);
-      }
-
-      void
-      sendMessage(IMC::Message& msg)
-      {
-        if (msg.getTimeStamp() == -1)
-          msg.setTimeStamp();
+        if (msg->getTimeStamp() == -1)
+          msg->setTimeStamp();
 
         uint8_t bfr[65535];
-        size_t rv = IMC::Packet::serialize(&msg, bfr, sizeof(bfr));
+        size_t rv = IMC::Packet::serialize(msg, bfr, sizeof(bfr));
         if (rv <= 0)
         {
           war("Serialization error - sent %ld bytes", rv);
@@ -479,17 +437,25 @@ namespace Supervisors
         }
 
         m_handle->write(bfr, rv);
+        spew("Sent %ld bytes", rv);
       }
 
       void
-      checkInput(void)
+      consume(const IMC::Announce* msg)
       {
-        IMC::Message* msg = waitMessage(0);
-        while (msg != nullptr)
-        {
-          dispatch(msg);
-          msg = waitMessage(0);
-        }
+        if (msg->sys_name != m_args.sys_name)
+          return;
+
+        spew("restarting entity configuration");
+        war("MCU reset: %s", msg->services.c_str());
+        onEntityReservation();
+      }
+
+      void
+      onClockSync(const IMC::ClockControl* msg)
+      {
+        if (msg->getSource() != getSystemId())
+          return;
       }
 
       //! Main loop.
@@ -501,13 +467,18 @@ namespace Supervisors
         while (!stopping())
         {
           waitForMessages(0.1);
-          if (query_params.overflow())
-          {
-            queryMCUParams();
-            query_params.reset();
-          }
+          // if (query_params.overflow())
+          // {
+          //   queryMCUParams();
+          //   query_params.reset();
+          // }
 
-          checkInput();
+          IMC::Message* msg = waitMessage(0.5);
+          if (msg != nullptr)
+          {
+            dispatch(msg, DF_LOOP_BACK | DF_KEEP_TIME);
+            Memory::clear(msg);
+          }
         }
       }
     };
