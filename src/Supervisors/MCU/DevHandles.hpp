@@ -51,7 +51,9 @@ namespace Supervisors
     public:
       MCUSerial(SerialPort* serial):
         m_serial(serial)
-      { }
+      { 
+        flush();
+      }
 
       ~MCUSerial(void)
       {
@@ -154,6 +156,7 @@ namespace Supervisors
         unsigned baud = std::stoul(arg);
         SerialPort* serial = new SerialPort(dev, baud);
 
+        m_task->debug("Creating serial handle %s::%s", dev, arg);
         return new MCUSerial(serial);
       }
 
