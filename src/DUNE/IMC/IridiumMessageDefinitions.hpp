@@ -46,13 +46,14 @@ namespace DUNE
   {
     enum IridiumMessageIds
     {
-      ID_DEVICEUPDATE  = 2001,
-      ID_ACTIVATESUB   = 2003,
+      ID_DEVICEUPDATE = 2001,
+      ID_ACTIVATESUB = 2003,
       ID_DEACTIVATESUB = 2004,
-      ID_IRIDIUMCMD    = 2005,
-      ID_IMCMESSAGE    = 2010,
-      ID_EXTDEVUPDATE  = 2011,
-      ID_FRAGMENT      = 2012
+      ID_IRIDIUMCMD = 2005,
+      ID_IMCMESSAGE = 2010,
+      ID_EXTDEVUPDATE = 2011,
+      ID_UPDATE_OP = 2012,
+      ID_FRAGMENT = 2013
     };
 
     typedef struct
@@ -205,6 +206,33 @@ namespace DUNE
       deserialize(uint8_t* data, uint16_t len);
 
       std::string command;
+    };
+
+    //! Iridium Message to request the operation of a vehicle using iridium
+    class IridiumOperation: public IridiumMessage
+    {
+    public:
+      enum OperationType
+      {
+        //! Deactivate.
+        OP_DEACTIVATE = 0,
+        //! Activate.
+        OP_ACTIVATE = 1
+      };
+
+      double ts;
+      uint8_t type;
+
+      IridiumOperation(void);
+
+      ~IridiumOperation(void)
+      { }
+
+      int
+      serialize(uint8_t* buffer);
+
+      int
+      deserialize(uint8_t* data, uint16_t len);
     };
 
     class IridiumFragment: public IridiumMessage

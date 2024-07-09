@@ -33,6 +33,7 @@ IR_MESSAGE(ID_DEACTIVATESUB, DeactivateSpotSubscription)
 IR_MESSAGE(ID_IRIDIUMCMD, IridiumCommand)
 IR_MESSAGE(ID_IMCMESSAGE, ImcIridiumMessage)
 IR_MESSAGE(ID_EXTDEVUPDATE, ExtendedDeviceUpdate)
+IR_MESSAGE(ID_UPDATE_OP, IridiumOperation)
 IR_MESSAGE(ID_FRAGMENT, IridiumFragment)
 
 #undef IR_MESSAGE
