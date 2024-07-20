@@ -27,12 +27,13 @@
 // Author: Ricardo Martins                                                  *
 //***************************************************************************
 
-#include <QMouseEvent>
-#include <QWheelEvent>
 #include <QGraphicsLineItem>
 #include <QMainWindow>
+#include <QMouseEvent>
+#include <QWheelEvent>
 
 #include <DUNE/DUNE.hpp>
+#include <DUNE/Network/ExtendedFragments.hpp>
 
 using DUNE_NAMESPACES;
 
@@ -56,13 +57,22 @@ GraphicsScene::GraphicsScene(const char* raddr, unsigned rport, unsigned lport, 
   setFocusPolicy(Qt::StrongFocus);
 
   m_sock = new QUdpSocket();
-  m_sock->bind(m_lport);
+  if (m_sock->bind(m_lport))
+  {
+    std::cout << "Socket bound to address:" << m_sock->localAddress().toString().toStdString()
+              << std::endl;
+    std::cout << "Socket bound to port:" << m_sock->localPort() << std::endl;
+  }
+  else
+  {
+    std::cerr << "Failed to bind socket" << std::endl;
+    exit(1);
+  }
 
   m_zoom_tim = new QTimer(this);
   connect(m_zoom_tim, SIGNAL(timeout()), this, SLOT(resetZoom()));
 
-  connect(m_sock, SIGNAL(readyRead()),
-          this, SLOT(handleInputData()));
+  connect(m_sock, SIGNAL(readyRead()), this, SLOT(handleInputData()));
 
   m_vline = new QGraphicsLineItem;
   m_vline->setPen(QPen(Qt::DotLine));
@@ -83,6 +93,7 @@ GraphicsScene::GraphicsScene(const char* raddr, unsigned rport, unsigned lport, 
 
 GraphicsScene::~GraphicsScene(void)
 {
+  m_sock->close();
   delete m_sock;
 }
 
@@ -249,6 +260,8 @@ GraphicsScene::wheelEvent(QWheelEvent* event)
   event->accept();
 }
 
+static DUNE::Network::ExtendedFragments::Combiner handler;
+
 void
 GraphicsScene::handleInputData(void)
 {
@@ -260,6 +273,16 @@ GraphicsScene::handleInputData(void)
     IMC::Message* msg = IMC::Packet::deserialize((uint8_t*)m_dgram.data(), m_dgram.size());
     if (msg == 0)
       continue;
+
+    if (msg->getId() == DUNE_IMC_MESSAGEPART)
+    {
+      IMC::CompressedImage* incoming = handler.onMessagePart(static_cast<IMC::MessagePart*>(msg));
+      Memory::clear(msg);
+      if (incoming == nullptr)
+        continue;
+
+      msg = incoming;
+    }
 
     if (msg->getId() == DUNE_IMC_COMPRESSEDIMAGE)
     {
@@ -289,5 +312,7 @@ GraphicsScene::handleInputData(void)
       // QString str("Roll: %0.2f | Pitch: %0.2f");
       // m_text.setText(str.arg(Angles::degrees(ang->roll), Angles::degrees(ang->pitch)));
     }
+
+    Memory::clear(msg);
   }
 }
