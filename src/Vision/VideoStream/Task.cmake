@@ -1,0 +1,3 @@
+if(NOT DUNE_SYS_HAS_CUDA_OPENCV)
+  set(TASK_ENABLED FALSE)
+endif()
