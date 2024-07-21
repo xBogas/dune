@@ -103,6 +103,11 @@ macro(dune_add_task root_folder task)
 
     if(NOT TASK_SOURCES)
       file(GLOB TASK_SOURCES ${root_folder}/${path}/*.cpp)
+      if(DUNE_SYS_HAS_CUDA)
+        file(GLOB TASK_CUDA_SOURCES ${root_folder}/${path}/*.cu)
+        set(TASK_SOURCES ${TASK_SOURCES} ${TASK_CUDA_SOURCES})
+      endif(DUNE_SYS_HAS_CUDA)
+      
     endif(NOT TASK_SOURCES)
 
     if(NOT TASK_HEADERS)
