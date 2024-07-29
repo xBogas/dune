@@ -37,20 +37,6 @@ namespace DUNE
 {
   namespace IMC
   {
-    typedef IridiumMessage* (*Constructor)(void);
-
-    template <typename MessageType>
-    static IridiumMessage*
-    factory(void)
-    {
-      return new MessageType();
-    }
-
-    static std::map<uint16_t, Constructor> c_ir_factory = {
-#define IR_MESSAGE(id, name) { id, &factory<name> },
-#include "IridiumMessageDefinitions.def"
-    };
-
     int
     IridiumMessage::serializeHeader(uint8_t* buffer)
     {
@@ -77,12 +63,40 @@ namespace DUNE
       ptr += IMC::deserialize(dst, ptr, len);
       ptr += IMC::deserialize(msg_id, ptr, len);
 
-      if (c_ir_factory[msg_id] == nullptr)
-        throw InvalidMessageId(msg_id);
+      switch (msg_id)
+      {
+        case ID_DEVICEUPDATE:
+          msg = new DeviceUpdate();
+          break;
 
-      msg = c_ir_factory[msg_id]();
-      // if new () fails it will throw an exception (std::bad_alloc)
-      std::cout << "Created new IridiumMessage with id: " << msg_id << std::endl;
+        case ID_ACTIVATESUB:
+          msg = new ActivateSpotSubscription();
+          break;
+
+        case ID_DEACTIVATESUB:
+          msg = new DeactivateSpotSubscription();
+          break;
+
+        case ID_IRIDIUMCMD:
+          msg = new IridiumCommand();
+          break;
+
+        case ID_IMCMESSAGE:
+          msg = new ImcIridiumMessage();
+          break;
+
+        case ID_EXTDEVUPDATE:
+          msg = new ExtendedDeviceUpdate();
+          break;
+
+        case ID_UPDATE_OP:
+          msg = new IridiumOperation();
+          break;
+
+        default:
+          throw InvalidMessageId(msg_id);
+      }
+
       msg->source = source;
       msg->destination = dst;
       msg->msg_id = msg_id;
@@ -93,8 +107,6 @@ namespace DUNE
     IridiumMessage*
     IridiumMessage::deserialize(const DUNE::IMC::IridiumMsgRx* msg)
     {
-      // msg->toText(std::cerr);
-
       IridiumMessage* ret = nullptr;
       uint8_t* bfr = (uint8_t*)msg->data.data();
       uint16_t bfr_len = msg->data.size();
@@ -105,7 +117,7 @@ namespace DUNE
       return ret;
     }
 
-    ImcIridiumMessage::ImcIridiumMessage()
+    ImcIridiumMessage::ImcIridiumMessage(void)
     {
       msg = NULL;
       msg_id = ID_IMCMESSAGE;
@@ -117,7 +129,7 @@ namespace DUNE
       msg_id = ID_IMCMESSAGE;
     }
 
-    ImcIridiumMessage::~ImcIridiumMessage()
+    ImcIridiumMessage::~ImcIridiumMessage(void)
     {
       if (msg != NULL)
         delete msg;
@@ -130,9 +142,7 @@ namespace DUNE
       start = buffer;
       uint32_t timestamp = (unsigned int)msg->getTimeStamp();
 
-      buffer += IMC::serialize(source, buffer);
-      buffer += IMC::serialize(destination, buffer);
-      buffer += IMC::serialize(msg_id, buffer);
+      buffer += serializeHeader(buffer);
       buffer += IMC::serialize(msg->getId(), buffer);
       buffer += IMC::serialize(timestamp, buffer);
       buffer = msg->serializeFields(buffer);
@@ -153,13 +163,12 @@ namespace DUNE
       buffer += IMC::deserialize(mgid, buffer, length);
       buffer += IMC::deserialize(timestamp, buffer, length);
       msg = DUNE::IMC::Factory::produce(mgid);
-      msg->setTimeStamp(timestamp);
-
       if (msg == NULL)
       {
         std::cerr << "ERROR parsing Iridium message: unknown msg id: " << mgid << std::endl;
         return 0;
       }
+      msg->setTimeStamp(timestamp);
 
       buffer += msg->deserializeFields(buffer, length);
 
@@ -170,9 +179,7 @@ namespace DUNE
     IridiumCommand::serialize(uint8_t* buffer)
     {
       uint8_t* start = buffer;
-      buffer += IMC::serialize(source, buffer);
-      buffer += IMC::serialize(destination, buffer);
-      buffer += IMC::serialize(msg_id, buffer);
+      buffer += serializeHeader(buffer);
       buffer += IMC::serialize(command, buffer);
 
       return buffer - start;
@@ -184,9 +191,7 @@ namespace DUNE
 
       uint8_t* start;
       start = buffer;
-      buffer += IMC::deserialize(source, buffer, length);
-      buffer += IMC::deserialize(destination, buffer, length);
-      buffer += IMC::deserialize(msg_id, buffer, length);
+      buffer += serializeHeader(buffer);
       buffer += IMC::deserialize(command, buffer, length);
 
       return buffer - start;

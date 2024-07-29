@@ -38,8 +38,6 @@
 #include <DUNE/Math.hpp>
 #include <DUNE/Math/Angles.hpp>
 
-#include <list>
-
 namespace DUNE
 {
   namespace IMC
