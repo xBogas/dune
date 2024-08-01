@@ -255,12 +255,9 @@ namespace Transports
         req.ttl = 60;
         req.type = SatelliteRequest::TYPE_RAW;
 
-        IMC::DevDataBinary data;
         uint8_t buffer[1024];
         size_t len = msg->serialize(buffer);
-        data.value.assign(buffer, buffer + len);
-
-        req.msg.set(data);
+        req.raw_data.assign(buffer, buffer + len);
 
         dispatch(req);
 
@@ -276,7 +273,7 @@ namespace Transports
         req.req_id = m_ann_req_id;
         req.ttl = 60;
         req.type = SatelliteRequest::TYPE_INLINEMSG;
-        req.msg.set(*msg);
+        req.msg_data.set(*msg);
 
         dispatch(req);
 
