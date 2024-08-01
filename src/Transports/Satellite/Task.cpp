@@ -50,6 +50,8 @@ namespace Transports
       uint16_t max_frame_size;
       //! Maximum age of received messages.
       double max_age_secs;
+      //! Send Iridium text messages as plain text (and not IMC).
+      bool iridium_plain_texts;
     };
 
     struct Task: public DUNE::Tasks::Task
@@ -76,6 +78,10 @@ namespace Transports
           .units(Units::Second)
           .defaultValue("1200")
           .description("Age, in seconds, after which received IMC messages are discarded.");
+
+        param("Send Iridium plain texts", m_args.iridium_plain_texts)
+          .description("Send Iridium text messages as plain text (and not IMC)")
+          .defaultValue("True");
 
         bind<IMC::IridiumTxStatus>(this);
         bind<IMC::IridiumMsgRx>(this);
@@ -224,11 +230,11 @@ namespace Transports
       }
 
       void
-      sendFragmented(IMC::Message* msg)
+      sendFragmented(const IMC::Message* msg)
       {
         Network::Fragments frags(msg, m_args.max_frame_size);
 
-        for (size_t i = 0; i < frags.getNumberOfFragments(); i++)
+        for (int i = 0; i < frags.getNumberOfFragments(); i++)
         {
           IMC::MessagePart* msg_frag = frags.getFragment(i);
 
@@ -237,8 +243,10 @@ namespace Transports
       }
 
       void
-      sendIridiumMsg(IMC::Message* msg)
+      sendIridiumMsg(const IMC::Message* msg)
       {
+        debug("sending message %s", msg->getName());
+
         // 10 bytes is the ImcIridiumMessage header size
         if (msg->getPayloadSerializationSize() + 10 > m_args.max_frame_size)
         {
@@ -250,29 +258,65 @@ namespace Transports
       }
 
       void
-      sendRawMsg(void)
+      sendRaw(const IMC::SatelliteRequest* msg)
       {
-        // Send raw data
+        IridiumMsgTx tx;
+        tx.setSource(msg->getSource());
+        tx.setSourceEntity(msg->getSourceEntity());
+
+        tx.destination = msg->destination;
+        tx.ttl = msg->ttl;
+        tx.req_id = msg->req_id;
+
+        tx.data.assign(msg->raw_data.begin(), msg->raw_data.end());
+
+        dispatch(tx);
       }
 
       void
-      sendTextMsg(void)
+      sendText(const IMC::SatelliteRequest* msg)
       {
-        // Send text message
+        IridiumMsgTx tx;
+        tx.setDestination(msg->getDestination());
+        tx.setDestinationEntity(msg->getDestinationEntity());
+
+        tx.destination = msg->destination;
+        tx.ttl = msg->ttl;
+        tx.req_id = msg->req_id;
+
+        if (m_args.iridium_plain_texts)
+        {
+          tx.data.assign(msg->txt_data.begin(), msg->txt_data.end());
+          dispatch(tx);
+          return;
+        }
+
+        IMC::IridiumCommand m;
+        m.source = getSystemId();
+        m.destination = 0xFFFF;
+        m.command = msg->txt_data;
+        uint8_t buffer[65535];
+        int len = m.serialize(buffer);
+        tx.data.assign(buffer, buffer + len);
+
+        dispatch(tx);
       }
 
       void
-      dispatchRequest(IMC::Message* msg, uint16_t id)
+      dispatchRequest(const IMC::Message* msg, uint16_t id)
       {
         uint8_t buffer[1024];
 
         ImcIridiumMessage ir_msg;
         ir_msg.source = getSystemId();
         ir_msg.destination = 0xFFFF;
-        ir_msg.msg = msg;
+        ir_msg.msg = msg->clone();
         int len = ir_msg.serialize(buffer);
 
         IridiumMsgTx tx;
+        tx.setSource(msg->getSource());
+        tx.setSourceEntity(msg->getSourceEntity());
+
         tx.ttl = 60;
         tx.req_id = m_req_id++;
         tx.data.assign(buffer, buffer + len);
@@ -354,36 +398,23 @@ namespace Transports
       void
       consume(const IMC::SatelliteRequest* msg)
       {
-        IridiumMsgTx tx;
-        tx.setSource(msg->getSource());
-        tx.setSourceEntity(msg->getSourceEntity());
-
-        tx.req_id = msg->req_id;
-        tx.destination = msg->destination;
-        tx.ttl = msg->ttl;
-
-        IMC::Message* imsg = const_cast<IMC::Message*>(msg->msg.get());
         switch (msg->type)
         {
           case SatelliteRequest::TYPE_INLINEMSG:
-            trace("sending inline message %s", imsg->getName());
-            sendIridiumMsg(imsg);
+            sendIridiumMsg(msg->msg_data.get());
             break;
 
           case SatelliteRequest::TYPE_TEXT:
-            trace("sending text message %s", imsg->getName());
-            // Send as text message
+            sendText(msg);
             break;
 
           case SatelliteRequest::TYPE_RAW:
-            trace("sending raw message %s", imsg->getName());
-            // Send as raw data
+            sendRaw(msg);
             break;
 
           default:
             break;
         }
-        dispatch(tx);
       }
 
       //! Main loop.
