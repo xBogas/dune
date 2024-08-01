@@ -28,7 +28,7 @@
 //***************************************************************************
 // Automatically generated.                                                 *
 //***************************************************************************
-// IMC XML MD5: 41f8f44f0c06349333beaee983a7e0ae                            *
+// IMC XML MD5: ed119357debb643394dcc65c38e4c9c1                            *
 //***************************************************************************
 
 // ISO C++ 98 headers.
@@ -20174,7 +20174,7 @@ namespace DUNE
     {
       m_header.mgid = 523;
       clear();
-      msg.setParent(this);
+      msg_data.setParent(this);
     }
 
     void
@@ -20184,7 +20184,9 @@ namespace DUNE
       destination.clear();
       ttl = 0;
       type = 0;
-      msg.clear();
+      msg_data.clear();
+      txt_data.clear();
+      raw_data.clear();
     }
 
     bool
@@ -20195,7 +20197,9 @@ namespace DUNE
       if (destination != other__.destination) return false;
       if (ttl != other__.ttl) return false;
       if (type != other__.type) return false;
-      if (msg != other__.msg) return false;
+      if (msg_data != other__.msg_data) return false;
+      if (txt_data != other__.txt_data) return false;
+      if (raw_data != other__.raw_data) return false;
       return true;
     }
 
@@ -20213,7 +20217,9 @@ namespace DUNE
       ptr__ += IMC::serialize(destination, ptr__);
       ptr__ += IMC::serialize(ttl, ptr__);
       ptr__ += IMC::serialize(type, ptr__);
-      ptr__ += msg.serialize(ptr__);
+      ptr__ += msg_data.serialize(ptr__);
+      ptr__ += IMC::serialize(txt_data, ptr__);
+      ptr__ += IMC::serialize(raw_data, ptr__);
       return ptr__;
     }
 
@@ -20225,7 +20231,9 @@ namespace DUNE
       bfr__ += IMC::deserialize(destination, bfr__, size__);
       bfr__ += IMC::deserialize(ttl, bfr__, size__);
       bfr__ += IMC::deserialize(type, bfr__, size__);
-      bfr__ += msg.deserialize(bfr__, size__);
+      bfr__ += msg_data.deserialize(bfr__, size__);
+      bfr__ += IMC::deserialize(txt_data, bfr__, size__);
+      bfr__ += IMC::deserialize(raw_data, bfr__, size__);
       return bfr__ - start__;
     }
 
@@ -20237,7 +20245,9 @@ namespace DUNE
       bfr__ += IMC::reverseDeserialize(destination, bfr__, size__);
       bfr__ += IMC::reverseDeserialize(ttl, bfr__, size__);
       bfr__ += IMC::deserialize(type, bfr__, size__);
-      bfr__ += msg.reverseDeserialize(bfr__, size__);
+      bfr__ += msg_data.reverseDeserialize(bfr__, size__);
+      bfr__ += IMC::reverseDeserialize(txt_data, bfr__, size__);
+      bfr__ += IMC::reverseDeserialize(raw_data, bfr__, size__);
       return bfr__ - start__;
     }
 
@@ -20248,51 +20258,53 @@ namespace DUNE
       IMC::toJSON(os__, "destination", destination, nindent__);
       IMC::toJSON(os__, "ttl", ttl, nindent__);
       IMC::toJSON(os__, "type", type, nindent__);
-      msg.toJSON(os__, "msg", nindent__);
+      msg_data.toJSON(os__, "msg_data", nindent__);
+      IMC::toJSON(os__, "txt_data", txt_data, nindent__);
+      IMC::toJSON(os__, "raw_data", raw_data, nindent__);
     }
 
     void
     SatelliteRequest::setTimeStampNested(double value__)
     {
-      if (!msg.isNull())
+      if (!msg_data.isNull())
       {
-        msg.get()->setTimeStamp(value__);
+        msg_data.get()->setTimeStamp(value__);
       }
     }
 
     void
     SatelliteRequest::setSourceNested(uint16_t value__)
     {
-      if (!msg.isNull())
+      if (!msg_data.isNull())
       {
-        msg.get()->setSource(value__);
+        msg_data.get()->setSource(value__);
       }
     }
 
     void
     SatelliteRequest::setSourceEntityNested(uint8_t value__)
     {
-      if (!msg.isNull())
+      if (!msg_data.isNull())
       {
-        msg.get()->setSourceEntity(value__);
+        msg_data.get()->setSourceEntity(value__);
       }
     }
 
     void
     SatelliteRequest::setDestinationNested(uint16_t value__)
     {
-      if (!msg.isNull())
+      if (!msg_data.isNull())
       {
-        msg.get()->setDestination(value__);
+        msg_data.get()->setDestination(value__);
       }
     }
 
     void
     SatelliteRequest::setDestinationEntityNested(uint8_t value__)
     {
-      if (!msg.isNull())
+      if (!msg_data.isNull())
       {
-        msg.get()->setDestinationEntity(value__);
+        msg_data.get()->setDestinationEntity(value__);
       }
     }
 

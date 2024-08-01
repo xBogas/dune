@@ -28,7 +28,7 @@
 //***************************************************************************
 // Automatically generated.                                                 *
 //***************************************************************************
-// IMC XML MD5: 41f8f44f0c06349333beaee983a7e0ae                            *
+// IMC XML MD5: ed119357debb643394dcc65c38e4c9c1                            *
 //***************************************************************************
 
 #ifndef DUNE_IMC_DEFINITIONS_HPP_INCLUDED_
@@ -19073,8 +19073,12 @@ namespace DUNE
       uint16_t ttl;
       //! Type.
       uint8_t type;
-      //! Message To Send.
-      InlineMessage<Message> msg;
+      //! Message Data.
+      InlineMessage<Message> msg_data;
+      //! Text Data.
+      std::string txt_data;
+      //! Raw Data.
+      std::vector<char> raw_data;
 
       static uint16_t
       getIdStatic(void)
@@ -19129,7 +19133,7 @@ namespace DUNE
       unsigned
       getVariableSerializationSize(void) const
       {
-        return IMC::getSerializationSize(destination) + msg.getSerializationSize();
+        return IMC::getSerializationSize(destination) + msg_data.getSerializationSize() + IMC::getSerializationSize(txt_data) + IMC::getSerializationSize(raw_data);
       }
 
       void
