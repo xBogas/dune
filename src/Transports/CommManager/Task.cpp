@@ -120,10 +120,6 @@ namespace Transports
             .description("Enable CommManager to process and convert legacy message -> AcousticOperation")
             .defaultValue("true");
 
-        param("Send Iridium plain texts", m_args.iridium_plain_texts)
-            .description("Send Iridium text messages as plain text (and not IMC)")
-            .defaultValue("1");
-
         bind<IMC::AcousticOperation>(this);
         bind<IMC::AcousticStatus>(this);
         bind<IMC::Announce>(this);
@@ -675,7 +671,7 @@ namespace Transports
         switch (msg->comm_mean)
         {
           case (IMC::TransmissionRequest::CMEAN_SATELLITE):
-            m_router.sendViaSatellite(msg, m_args.iridium_plain_texts);
+            m_router.sendViaSatellite(msg);
             break;
           case (IMC::TransmissionRequest::CMEAN_GSM):
             if (msg->destination.empty() || msg->destination == "broadcast") {
@@ -693,10 +689,10 @@ namespace Transports
             m_router.sendViaWifi(msg);
             break;
           case (IMC::TransmissionRequest::CMEAN_ANY):
-            m_router.sendViaAny(msg, m_args.iridium_plain_texts);
+            m_router.sendViaAny(msg);
             break;
           case (IMC::TransmissionRequest::CMEAN_ALL):
-            m_router.sendViaAll(msg, m_args.iridium_plain_texts);
+            m_router.sendViaAll(msg);
             break;
           default:
             m_router.answer(msg, "Communication mean not implemented.",
