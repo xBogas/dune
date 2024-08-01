@@ -36,7 +36,7 @@ namespace DUNE
   {
     int Fragments::s_uid = 0;
 
-    Fragments::Fragments(IMC::Message* msg, int mtu)
+    Fragments::Fragments(const IMC::Message* msg, int mtu)
     {
       m_uid = s_uid++;
       m_num_frags = 0;

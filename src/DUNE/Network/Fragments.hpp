@@ -41,7 +41,7 @@ namespace DUNE
     class Fragments
     {
     public:
-      Fragments(IMC::Message* message, int mtu);
+      Fragments(const IMC::Message* message, int mtu);
 
       IMC::MessagePart*
       getFragment(int frag_number);
