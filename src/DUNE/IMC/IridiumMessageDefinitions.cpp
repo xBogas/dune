@@ -112,9 +112,18 @@ namespace DUNE
       uint16_t bfr_len = msg->data.size();
 
       bfr += deserializeHeader(bfr, bfr_len, ret);
-      ret->deserialize(bfr, bfr_len);
+      ret->deserializeFields(bfr, bfr_len);
 
       return ret;
+    }
+
+    int
+    IridiumMessage::serialize(uint8_t* buffer)
+    {
+      uint8_t* start = buffer;
+      buffer += serializeHeader(buffer);
+      buffer += serializeFields(buffer);
+      return buffer - start;
     }
 
     ImcIridiumMessage::ImcIridiumMessage(void)
@@ -136,13 +145,12 @@ namespace DUNE
     }
 
     int
-    ImcIridiumMessage::serialize(uint8_t* buffer)
+    ImcIridiumMessage::serializeFields(uint8_t* buffer)
     {
       uint8_t* start;
       start = buffer;
       uint32_t timestamp = (unsigned int)msg->getTimeStamp();
 
-      buffer += serializeHeader(buffer);
       buffer += IMC::serialize(msg->getId(), buffer);
       buffer += IMC::serialize(timestamp, buffer);
       buffer = msg->serializeFields(buffer);
@@ -150,16 +158,13 @@ namespace DUNE
     }
 
     int
-    ImcIridiumMessage::deserialize(uint8_t* buffer, uint16_t length)
+    ImcIridiumMessage::deserializeFields(uint8_t* buffer, uint16_t length)
     {
       uint8_t* start;
       uint16_t mgid;
       uint32_t timestamp;
 
       start = buffer;
-      buffer += IMC::deserialize(source, buffer, length);
-      buffer += IMC::deserialize(destination, buffer, length);
-      buffer += IMC::deserialize(msg_id, buffer, length);
       buffer += IMC::deserialize(mgid, buffer, length);
       buffer += IMC::deserialize(timestamp, buffer, length);
       msg = DUNE::IMC::Factory::produce(mgid);
@@ -176,35 +181,29 @@ namespace DUNE
     }
 
     int
-    IridiumCommand::serialize(uint8_t* buffer)
+    IridiumCommand::serializeFields(uint8_t* buffer)
     {
       uint8_t* start = buffer;
-      buffer += serializeHeader(buffer);
       buffer += IMC::serialize(command, buffer);
 
       return buffer - start;
     }
 
     int
-    IridiumCommand::deserialize(uint8_t* buffer, uint16_t length)
+    IridiumCommand::deserializeFields(uint8_t* buffer, uint16_t length)
     {
 
       uint8_t* start;
       start = buffer;
-      buffer += serializeHeader(buffer);
       buffer += IMC::deserialize(command, buffer, length);
 
       return buffer - start;
     }
 
     int
-    DeviceUpdate::serialize(uint8_t* buffer)
+    DeviceUpdate::serializeFields(uint8_t* buffer)
     {
       uint8_t* start = buffer;
-      buffer += IMC::serialize(source, buffer);
-      buffer += IMC::serialize(destination, buffer);
-      buffer += IMC::serialize(msg_id, buffer);
-
       std::vector<DevicePosition>::iterator it;
       int32_t _lat, _lon;
       uint32_t _time;
@@ -224,17 +223,13 @@ namespace DUNE
     }
 
     int
-    DeviceUpdate::deserialize(uint8_t* buffer, uint16_t length)
+    DeviceUpdate::deserializeFields(uint8_t* buffer, uint16_t length)
     {
       uint8_t* start;
       uint32_t _time;
       int32_t _lat, _lon;
 
       start = buffer;
-      buffer += IMC::deserialize(source, buffer, length);
-      buffer += IMC::deserialize(destination, buffer, length);
-      buffer += IMC::deserialize(msg_id, buffer, length);
-
       while (length >= 14)
       {  // id (2) + time (4) + lat(4) + lon(4)
         DevicePosition pos;
@@ -254,12 +249,9 @@ namespace DUNE
     }
 
     int
-    ExtendedDeviceUpdate::serialize(uint8_t* buffer)
+    ExtendedDeviceUpdate::serializeFields(uint8_t* buffer)
     {
       uint8_t* start = buffer;
-      buffer += IMC::serialize(source, buffer);
-      buffer += IMC::serialize(destination, buffer);
-      buffer += IMC::serialize(msg_id, buffer);
 
       std::vector<DevicePosition>::iterator it;
       int32_t _lat, _lon;
@@ -282,17 +274,13 @@ namespace DUNE
     }
 
     int
-    ExtendedDeviceUpdate::deserialize(uint8_t* buffer, uint16_t length)
+    ExtendedDeviceUpdate::deserializeFields(uint8_t* buffer, uint16_t length)
     {
       uint8_t* start;
       uint32_t _time;
       int32_t _lat, _lon;
 
       start = buffer;
-      buffer += IMC::deserialize(source, buffer, length);
-      buffer += IMC::deserialize(destination, buffer, length);
-      buffer += IMC::deserialize(msg_id, buffer, length);
-
       while (length >= 15)
       {  // id (2) + time (4) + lat(4) + lon(4) + pos_class (1)
         DevicePosition pos;
@@ -318,7 +306,7 @@ namespace DUNE
     }
 
     int
-    IridiumOperation::serialize(uint8_t* buffer)
+    IridiumOperation::serializeFields(uint8_t* buffer)
     {
       uint8_t* start = buffer;
       buffer += DUNE::IMC::serialize(ts, buffer);
@@ -327,13 +315,44 @@ namespace DUNE
     }
 
     int
-    IridiumOperation::deserialize(uint8_t* data, uint16_t len)
+    IridiumOperation::deserializeFields(uint8_t* data, uint16_t len)
     {
       uint8_t* buffer = data;
       buffer += DUNE::IMC::deserialize(ts, buffer, len);
       buffer += DUNE::IMC::deserialize(type, buffer, len);
 
       return buffer - data;
+    }
+
+    ImcFullIridiumMsg::ImcFullIridiumMsg(void)
+    {
+      msg_id = ID_IMC_FULL_IRIDIUM;
+      msg = NULL;
+    }
+
+    ImcFullIridiumMsg::ImcFullIridiumMsg(IMC::Message* imc_msg)
+    {
+      msg_id = ID_IMC_FULL_IRIDIUM;
+      msg = imc_msg;
+    }
+
+    ImcFullIridiumMsg::~ImcFullIridiumMsg(void)
+    {
+      if (msg != NULL)
+        delete msg;
+    }
+
+    int
+    ImcFullIridiumMsg::serializeFields(uint8_t* data)
+    {
+      return IMC::Packet::serialize(msg, data, msg->getSerializationSize());
+    }
+
+    int
+    ImcFullIridiumMsg::deserializeFields(uint8_t* data, uint16_t len)
+    {
+      msg = IMC::Packet::deserialize(data, len);
+      return msg->getSerializationSize();
     }
 
   } /* namespace IMC */

@@ -50,7 +50,8 @@ namespace DUNE
       ID_IRIDIUMCMD = 2005,
       ID_IMCMESSAGE = 2010,
       ID_EXTDEVUPDATE = 2011,
-      ID_UPDATE_OP = 2012
+      ID_UPDATE_OP = 2012,
+      ID_IMC_FULL_IRIDIUM = 2013
     };
 
     typedef struct
@@ -77,14 +78,11 @@ namespace DUNE
       deserialize(const DUNE::IMC::IridiumMsgRx* msg);
 
       int
-      serializeHeader(uint8_t* buffer);
-
-      static int
-      deserializeHeader(uint8_t* data, uint16_t& len, IridiumMessage*& msg);
+      serialize(uint8_t* buffer);
 
       //! Serialize this message into a data buffer (to be sent via Iridium)
       virtual int
-      serialize(uint8_t* buffer)
+      serializeFields(uint8_t* buffer)
       {
         (void)buffer;
 
@@ -93,7 +91,7 @@ namespace DUNE
 
       //! Deserialize an Iridium data buffer
       virtual int
-      deserialize(uint8_t* data, uint16_t len)
+      deserializeFields(uint8_t* data, uint16_t len)
       {
         (void)data;
         (void)len;
@@ -103,6 +101,13 @@ namespace DUNE
 
       virtual ~IridiumMessage(void)
       { }
+
+    private:
+      int
+      serializeHeader(uint8_t* buffer);
+
+      static int
+      deserializeHeader(uint8_t* data, uint16_t& len, IridiumMessage*& msg);
     };
 
     //! An Iridium message that encapsulates an IMC message
@@ -116,10 +121,10 @@ namespace DUNE
       ImcIridiumMessage(DUNE::IMC::Message* msg);
 
       int
-      serialize(uint8_t* buffer);
+      serializeFields(uint8_t* buffer);
 
       int
-      deserialize(uint8_t* data, uint16_t len);
+      deserializeFields(uint8_t* data, uint16_t len);
 
       DUNE::IMC::Message* msg;
     };
@@ -135,10 +140,10 @@ namespace DUNE
       { }
 
       int
-      serialize(uint8_t* buffer);
+      serializeFields(uint8_t* buffer);
 
       int
-      deserialize(uint8_t* data, uint16_t len);
+      deserializeFields(uint8_t* data, uint16_t len);
 
       std::vector<DevicePosition> positions;
     };
@@ -155,10 +160,10 @@ namespace DUNE
       { }
 
       int
-      serialize(uint8_t* buffer);
+      serializeFields(uint8_t* buffer);
 
       int
-      deserialize(uint8_t* data, uint16_t len);
+      deserializeFields(uint8_t* data, uint16_t len);
 
       std::vector<DevicePosition> positions;
     };
@@ -197,10 +202,10 @@ namespace DUNE
       { }
 
       int
-      serialize(uint8_t* buffer);
+      serializeFields(uint8_t* buffer);
 
       int
-      deserialize(uint8_t* data, uint16_t len);
+      deserializeFields(uint8_t* data, uint16_t len);
 
       std::string command;
     };
@@ -226,10 +231,28 @@ namespace DUNE
       { }
 
       int
-      serialize(uint8_t* buffer);
+      serializeFields(uint8_t* buffer);
 
       int
-      deserialize(uint8_t* data, uint16_t len);
+      deserializeFields(uint8_t* data, uint16_t len);
+    };
+
+    class ImcFullIridiumMsg: public IridiumMessage
+    {
+    public:
+      ImcFullIridiumMsg(void);
+
+      ImcFullIridiumMsg(IMC::Message* msg);
+
+      ~ImcFullIridiumMsg(void);
+
+      int
+      serializeFields(uint8_t* buffer);
+
+      int
+      deserializeFields(uint8_t* data, uint16_t len);
+
+      DUNE::IMC::Message* msg;
     };
 
   } /* namespace IMC */
