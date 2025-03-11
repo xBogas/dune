@@ -77,6 +77,9 @@ namespace DUNE
       static IridiumMessage*
       deserialize(const DUNE::IMC::IridiumMsgRx* msg);
 
+      static IridiumMessage*
+      deserialize(const DUNE::IMC::SatelliteRx* msg);
+
       int
       serialize(uint8_t* buffer);
 

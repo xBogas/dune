@@ -28,7 +28,7 @@
 //***************************************************************************
 // Automatically generated.                                                 *
 //***************************************************************************
-// IMC XML MD5: ed119357debb643394dcc65c38e4c9c1                            *
+// IMC XML MD5: 4a28b3364826b77555ea15e7fef43c20                            *
 //***************************************************************************
 
 // ISO C++ 98 headers.
@@ -20515,6 +20515,86 @@ namespace DUNE
     AssetReport::setDestinationEntityNested(uint8_t value__)
     {
       msgs.setDestinationEntity(value__);
+    }
+
+    SatelliteRx::SatelliteRx(void)
+    {
+      m_header.mgid = 526;
+      clear();
+    }
+
+    void
+    SatelliteRx::clear(void)
+    {
+      origin.clear();
+      htime = 0;
+      lat = 0;
+      lon = 0;
+      data.clear();
+    }
+
+    bool
+    SatelliteRx::fieldsEqual(const Message& msg__) const
+    {
+      const IMC::SatelliteRx& other__ = static_cast<const SatelliteRx&>(msg__);
+      if (origin != other__.origin) return false;
+      if (htime != other__.htime) return false;
+      if (lat != other__.lat) return false;
+      if (lon != other__.lon) return false;
+      if (data != other__.data) return false;
+      return true;
+    }
+
+    int
+    SatelliteRx::validate(void) const
+    {
+      return true;
+    }
+
+    uint8_t*
+    SatelliteRx::serializeFields(uint8_t* bfr__) const
+    {
+      uint8_t* ptr__ = bfr__;
+      ptr__ += IMC::serialize(origin, ptr__);
+      ptr__ += IMC::serialize(htime, ptr__);
+      ptr__ += IMC::serialize(lat, ptr__);
+      ptr__ += IMC::serialize(lon, ptr__);
+      ptr__ += IMC::serialize(data, ptr__);
+      return ptr__;
+    }
+
+    uint16_t
+    SatelliteRx::deserializeFields(const uint8_t* bfr__, uint16_t size__)
+    {
+      const uint8_t* start__ = bfr__;
+      bfr__ += IMC::deserialize(origin, bfr__, size__);
+      bfr__ += IMC::deserialize(htime, bfr__, size__);
+      bfr__ += IMC::deserialize(lat, bfr__, size__);
+      bfr__ += IMC::deserialize(lon, bfr__, size__);
+      bfr__ += IMC::deserialize(data, bfr__, size__);
+      return bfr__ - start__;
+    }
+
+    uint16_t
+    SatelliteRx::reverseDeserializeFields(const uint8_t* bfr__, uint16_t size__)
+    {
+      const uint8_t* start__ = bfr__;
+      bfr__ += IMC::reverseDeserialize(origin, bfr__, size__);
+      bfr__ += IMC::reverseDeserialize(htime, bfr__, size__);
+      bfr__ += IMC::reverseDeserialize(lat, bfr__, size__);
+      bfr__ += IMC::reverseDeserialize(lon, bfr__, size__);
+      bfr__ += IMC::reverseDeserialize(data, bfr__, size__);
+      return bfr__ - start__;
+    }
+
+    void
+    SatelliteRx::fieldsToJSON(std::ostream& os__, unsigned nindent__) const
+    {
+      IMC::toJSON(os__, "origin", origin, nindent__);
+      IMC::toJSON(os__, "htime", htime, nindent__);
+      IMC::toJSON(os__, "lat", lat, nindent__);
+      IMC::toJSON(os__, "lon", lon, nindent__);
+      IMC::toJSON(os__, "data", data, nindent__);
     }
 
     Abort::Abort(void)

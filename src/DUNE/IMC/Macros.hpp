@@ -28,7 +28,7 @@
 //***************************************************************************
 // Automatically generated.                                                 *
 //***************************************************************************
-// IMC XML MD5: ed119357debb643394dcc65c38e4c9c1                            *
+// IMC XML MD5: 4a28b3364826b77555ea15e7fef43c20                            *
 //***************************************************************************
 
 #ifndef DUNE_IMC_MACROS_HPP_INCLUDED_
@@ -512,6 +512,8 @@
 #define DUNE_IMC_SATELLITESTATUS 524
 //! AssetReport identification number.
 #define DUNE_IMC_ASSETREPORT 525
+//! SatelliteRx identification number.
+#define DUNE_IMC_SATELLITERX 526
 //! Abort identification number.
 #define DUNE_IMC_ABORT 550
 //! PlanSpecification identification number.

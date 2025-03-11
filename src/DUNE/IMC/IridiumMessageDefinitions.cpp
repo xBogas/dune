@@ -117,6 +117,19 @@ namespace DUNE
       return ret;
     }
 
+    IridiumMessage*
+    IridiumMessage::deserialize(const DUNE::IMC::SatelliteRx* msg)
+    {
+      IridiumMessage* ret = nullptr;
+      uint8_t* bfr = (uint8_t*)msg->data.data();
+      uint16_t bfr_len = msg->data.size();
+
+      bfr += deserializeHeader(bfr, bfr_len, ret);
+      ret->deserializeFields(bfr, bfr_len);
+
+      return ret;
+    }
+
     int
     IridiumMessage::serialize(uint8_t* buffer)
     {

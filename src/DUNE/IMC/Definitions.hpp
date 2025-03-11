@@ -28,7 +28,7 @@
 //***************************************************************************
 // Automatically generated.                                                 *
 //***************************************************************************
-// IMC XML MD5: ed119357debb643394dcc65c38e4c9c1                            *
+// IMC XML MD5: 4a28b3364826b77555ea15e7fef43c20                            *
 //***************************************************************************
 
 #ifndef DUNE_IMC_DEFINITIONS_HPP_INCLUDED_
@@ -19354,6 +19354,81 @@ namespace DUNE
 
       void
       setDestinationEntityNested(uint8_t value__);
+    };
+
+    //! Received Satellite Message.
+    class SatelliteRx: public Message
+    {
+    public:
+      //! Origin Identifier.
+      std::string origin;
+      //! Timestamp.
+      fp64_t htime;
+      //! Latitude Reference.
+      fp64_t lat;
+      //! Longitude Reference.
+      fp64_t lon;
+      //! Data.
+      std::vector<char> data;
+
+      static uint16_t
+      getIdStatic(void)
+      {
+        return 526;
+      }
+
+      SatelliteRx(void);
+
+      SatelliteRx*
+      clone(void) const
+      {
+        return new SatelliteRx(*this);
+      }
+
+      void
+      clear(void);
+
+      bool
+      fieldsEqual(const Message& msg__) const;
+
+      int
+      validate(void) const;
+
+      uint8_t*
+      serializeFields(uint8_t* bfr__) const;
+
+      uint16_t
+      deserializeFields(const uint8_t* bfr__, uint16_t size__);
+
+      uint16_t
+      reverseDeserializeFields(const uint8_t* bfr__, uint16_t size__);
+
+      uint16_t
+      getId(void) const
+      {
+        return SatelliteRx::getIdStatic();
+      }
+
+      const char*
+      getName(void) const
+      {
+        return "SatelliteRx";
+      }
+
+      unsigned
+      getFixedSerializationSize(void) const
+      {
+        return 24;
+      }
+
+      unsigned
+      getVariableSerializationSize(void) const
+      {
+        return IMC::getSerializationSize(origin) + IMC::getSerializationSize(data);
+      }
+
+      void
+      fieldsToJSON(std::ostream& os__, unsigned nindent__) const;
     };
 
     //! Abort.
