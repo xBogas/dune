@@ -29,6 +29,7 @@
 
 // DUNE headers.
 #include <DUNE/DUNE.hpp>
+#include <Supervisors/Reporter/Client.hpp>
 
 // C++ headers.
 #include <unordered_map>
@@ -49,6 +50,23 @@ namespace Transports
       double ann_period;
       //! Delay between device updates messages.
       double dev_period;
+      //! Enable report messages.
+      bool enable_reports;
+      //! Delay between report messages.
+      double rep_period;
+    };
+
+    // Report structure.
+    struct Report
+    {
+      float lat;
+      float lon;
+      uint8_t depth;
+      int16_t yaw;
+      int16_t alt;
+      int8_t progress;
+      uint8_t fuel_level;
+      uint8_t fuel_conf;
     };
 
     struct Task: public DUNE::Tasks::Task
@@ -73,6 +91,17 @@ namespace Transports
       bool m_ann_queued;
       //! Flag to indicate if the last device update message was queued.
       bool m_dev_queued;
+      //! Estimated state.
+      IMC::EstimatedState m_estate;
+      //! Fuel level.
+      float m_fuel_level;
+      //! Fuel confidence.
+      uint8_t m_fuel_conf;
+      //! Plan progress.
+      int8_t m_progress;
+
+      //! Reporter API.
+      Supervisors::Reporter::Client* m_reporter;
       //! Announce watchdog.
       Counter<double> m_ann_wdog;
       //! Device updates watchdog.
@@ -82,7 +111,8 @@ namespace Transports
       //! @param[in] name task name.
       //! @param[in] ctx context.
       Task(const std::string& name, Tasks::Context& ctx):
-        DUNE::Tasks::Task(name, ctx)
+        DUNE::Tasks::Task(name, ctx),
+        m_reporter(nullptr)
       {
         paramActive(Tasks::Parameter::SCOPE_GLOBAL, Tasks::Parameter::VISIBILITY_USER);
 
@@ -96,10 +126,41 @@ namespace Transports
           .defaultValue("60")
           .description("Delay between device updates being sent.");
 
+        param("Enable reports", m_args.enable_reports)
+          .defaultValue("false")
+          .description("Enable report messages.");
+
+        param("Report Periodicity", m_args.rep_period)
+          .units(Units::Second)
+          .defaultValue("300")
+          .description("Delay between report messages being sent in seconds.");
+
         bind<IMC::Announce>(this);
         bind<IMC::FuelLevel>(this);
         bind<IMC::PlanControlState>(this);
         bind<IMC::VehicleState>(this);
+
+        // Report
+        bind<IMC::ReportControl>(this);
+        bind<IMC::EstimatedState>(this);
+        bind<IMC::PlanControlState>(this);
+        bind<IMC::FuelLevel>(this);
+      }
+
+      void
+      onResourceAcquisition(void)
+      {
+        if (!m_args.enable_reports)
+          return;
+
+        m_reporter = new Supervisors::Reporter::Client(this, Supervisors::Reporter::IS_SATELLITE,
+                                                       m_args.rep_period, false);
+      }
+
+      void
+      onResourceRelease(void)
+      {
+        Memory::clear(m_reporter);
       }
 
       void
@@ -177,6 +238,32 @@ namespace Transports
 
           return;
         }
+      }
+
+      void
+      consume(const IMC::ReportControl* msg)
+      {
+        if (m_reporter != nullptr)
+          m_reporter->consume(msg);
+      }
+
+      void
+      consume(const IMC::EstimatedState* msg)
+      {
+        m_estate = *msg;
+      }
+
+      void
+      consume(const IMC::PlanControlState* msg)
+      {
+        m_progress = msg->plan_progress;
+      }
+
+      void
+      consume(const IMC::FuelLevel* msg)
+      {
+        m_fuel_level = msg->value;
+        m_fuel_conf = msg->confidence;
       }
 
       void
@@ -280,6 +367,45 @@ namespace Transports
         trace("announce request sent ...");
       }
 
+      void
+      sendSatelitteMsg(const std::vector<char>& report)
+      {
+        SatelliteRequest req;
+        req.req_id = m_req_id++;
+        req.ttl = 60;
+        req.type = SatelliteRequest::TYPE_RAW;
+        req.raw_data = report;
+
+        dispatch(req);
+
+        trace("report request sent ...");
+      }
+
+      void
+      sendReport(void)
+      {
+        double lat = 0;
+        double lon = 0;
+        Coordinates::toWGS84(m_estate, lat, lon);
+
+        Report dat;
+        dat.lat = lat;
+        dat.lon = lon;
+        dat.depth = (uint8_t)m_estate.depth;
+        dat.yaw = (int16_t)(m_estate.psi * 100.0);
+        dat.alt = (int16_t)(m_estate.alt * 10.0);
+        dat.fuel_level = (uint8_t)m_fuel_level;
+        dat.fuel_conf = (uint8_t)m_fuel_conf;
+        dat.progress = (int8_t)m_progress;
+
+        std::vector<char> data;
+        data.resize(sizeof(dat) + 1);
+        data[0] = 0x03;  // Same Report code as for Acoustic communication
+        std::memcpy(&data[1], &dat, sizeof(dat));
+
+        sendSatelitteMsg(data);
+      }
+
       //! Main loop.
       void
       onMain(void)
@@ -296,6 +422,12 @@ namespace Transports
 
           if (m_dev_wdog.overflow())
             sendDeviceUpdates();
+
+          if (m_args.enable_reports)
+            continue;
+
+          if (m_reporter->trigger())
+            sendReport();
         }
       }
     };
