@@ -203,30 +203,18 @@ namespace Transports
 
       //! Update Iriridium operation state.
       void
-      handleOperation(IridiumOperation* op)
+      handleOperation(const IMC::IridiumMsgRx* msg)
       {
-        double elapsed = Clock::getSinceEpoch() - op->ts;
-        if (elapsed > 180.0)
-        {
-          inf("expired operation from %d (-%f seconds)", op->source, elapsed - 180.0);
-          return;
-        }
+        IMC::SatelliteRx sat_rx;
+        sat_rx.setDestinationEntity(msg->getDestinationEntity());
 
-        // Handle operation update
-        switch (op->type)
-        {
-          case IMC::IridiumOperation::OP_DEACTIVATE:
-            // Remove subscription
-            break;
+        sat_rx.origin = msg->origin;
+        sat_rx.htime = msg->htime;
+        sat_rx.lat = msg->lat;
+        sat_rx.lon = msg->lon;
+        sat_rx.data = msg->data;
 
-          case IMC::IridiumOperation::OP_ACTIVATE:
-            // Add/Update subscription
-            break;
-
-          default:
-            inf("invalid operation type %d", op->type);
-            break;
-        }
+        dispatch(sat_rx);
       }
 
       void
@@ -260,7 +248,13 @@ namespace Transports
       void
       sendRaw(const IMC::SatelliteRequest* msg)
       {
-        IridiumMsgTx tx;
+        if (msg->raw_data.empty())
+        {
+          dispatchRequestRaw(msg->msg_data.get(), msg);
+          return;
+        }
+
+        IMC::IridiumMsgTx tx;
         tx.setSource(msg->getSource());
         tx.setSourceEntity(msg->getSourceEntity());
 
@@ -323,24 +317,40 @@ namespace Transports
 
         dispatch(tx);
 
-        spew("sent message (%d) %s", id, msg->getName());
+        spew("sent message (%d) %s", req->req_id, msg->getName());
+      }
+
+      void
+      dispatchRequestRaw(const IMC::Message* msg, const IMC::SatelliteRequest* req)
+      {
+        uint8_t bfr[DUNE_IMC_CONST_MAX_SIZE];
+
+        ImcFullIridiumMsg ir_msg(msg->clone());
+        uint16_t len = ir_msg.serialize(bfr);
+
+        IMC::IridiumMsgTx tx;
+        tx.setDestination(msg->getDestination());
+
+        tx.req_id = req->req_id;
+        tx.data.assign(bfr, bfr + len);
+        tx.destination = req->destination;
+        tx.ttl = req->ttl;
+
+        dispatch(tx);
+
+        trace("Sent message (%d) %s as raw", req->req_id, msg->getName());
       }
 
       void
       consume(const IMC::IridiumTxStatus* msg)
       {
-        // Respond to the original sender
-        if (msg->getDestinationEntity() != getEntityId())
-        {
-          IMC::SatelliteStatus sat_status;
-          sat_status.setDestinationEntity(msg->getDestinationEntity());
-          sat_status.req_id = msg->req_id;
-          sat_status.status = msg->status;
-          sat_status.info = msg->text;
+        IMC::SatelliteStatus sat_status;
+        sat_status.setDestinationEntity(msg->getDestinationEntity());
+        sat_status.req_id = msg->req_id;
+        sat_status.status = msg->status;
+        sat_status.info = msg->text;
 
-          dispatch(sat_status);
-          return;
-        }
+        dispatch(sat_status);
       }
 
       void
@@ -385,7 +395,7 @@ namespace Transports
             break;
 
           case ID_UPDATE_OP:
-            handleOperation(static_cast<IridiumOperation*>(ir_msg));
+            handleOperation(msg);
             break;
 
           default:
