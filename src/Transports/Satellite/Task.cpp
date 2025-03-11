@@ -31,9 +31,6 @@
 #include <DUNE/DUNE.hpp>
 #include <DUNE/Network/Fragments.hpp>
 
-// C++ headers.
-#include <unordered_map>
-
 namespace Transports
 {
   //! Insert short task description here.
@@ -58,17 +55,15 @@ namespace Transports
     {
       //! Task arguments.
       Arguments m_args;
-      //! Request ID for Iridium messages.
-      uint16_t m_req_id;
 
       //! Constructor.
       //! @param[in] name task name.
       //! @param[in] ctx context.
       Task(const std::string& name, Tasks::Context& ctx):
-        DUNE::Tasks::Task(name, ctx),
-        m_req_id(0)
+        DUNE::Tasks::Task(name, ctx)
       {
-        paramActive(Tasks::Parameter::SCOPE_GLOBAL, Tasks::Parameter::VISIBILITY_USER);
+        paramActive(Tasks::Parameter::SCOPE_GLOBAL,  // Add Active parameters
+                    Tasks::Parameter::VISIBILITY_USER, false);
 
         param("Maximum Frame Size", m_args.max_frame_size)
           .defaultValue("268")
@@ -111,7 +106,7 @@ namespace Transports
       }
 
       void
-      handleIridiumCmd(IridiumCommand* cmd)
+      handleIridiumCmd(const IridiumCommand* cmd)
       {
         IMC::TextMessage tm;
         tm.text = cmd->command;
@@ -123,13 +118,13 @@ namespace Transports
       }
 
       void
-      handleUpdates(std::vector<DevicePosition>& positions)
+      handleUpdates(const std::vector<DevicePosition>& positions)
       {
         inf("Received device update with %d positions", (int)positions.size());
 
         for (auto itr = positions.begin(); itr != positions.end(); itr++)
         {
-          DevicePosition& pos = *itr;
+          const DevicePosition& pos = *itr;
           int selector = (pos.id & 0x0F);
 
           IMC::RemoteSensorInfo rsi;
@@ -218,7 +213,7 @@ namespace Transports
       }
 
       void
-      sendFragmented(const IMC::Message* msg)
+      sendFragmented(const IMC::Message* msg, const IMC::SatelliteRequest* req)
       {
         Network::Fragments frags(msg, m_args.max_frame_size);
 
@@ -226,23 +221,24 @@ namespace Transports
         {
           IMC::MessagePart* msg_frag = frags.getFragment(i);
 
-          dispatchRequest(msg_frag, m_req_id++);
+          dispatchRequest(msg_frag, req);
         }
       }
 
       void
-      sendIridiumMsg(const IMC::Message* msg)
+      sendIridiumMsg(const IMC::SatelliteRequest* msg)
       {
-        debug("sending message %s", msg->getName());
+        const IMC::Message* m = msg->msg_data.get();
+        debug("sending message %s", m->getName());
 
         // 10 bytes is the ImcIridiumMessage header size
-        if (msg->getPayloadSerializationSize() + 10 > m_args.max_frame_size)
+        if (m->getPayloadSerializationSize() + 10 > m_args.max_frame_size)
         {
-          sendFragmented(msg);
+          sendFragmented(m, msg);
           return;  // Send as fragments
         }
 
-        dispatchRequest(msg, m_req_id++);
+        dispatchRequest(m, msg);
       }
 
       void
@@ -297,7 +293,7 @@ namespace Transports
       }
 
       void
-      dispatchRequest(const IMC::Message* msg, uint16_t id)
+      dispatchRequest(const IMC::Message* msg, const IMC::SatelliteRequest* req)
       {
         uint8_t buffer[1024];
 
@@ -307,12 +303,13 @@ namespace Transports
         ir_msg.msg = msg->clone();
         int len = ir_msg.serialize(buffer);
 
-        IridiumMsgTx tx;
+        IMC::IridiumMsgTx tx;
         tx.setSource(msg->getSource());
         tx.setSourceEntity(msg->getSourceEntity());
 
-        tx.ttl = 60;
-        tx.req_id = m_req_id++;
+        tx.ttl = req->ttl;
+        tx.req_id = req->req_id;
+        tx.destination = req->destination;
         tx.data.assign(buffer, buffer + len);
 
         dispatch(tx);
@@ -411,7 +408,7 @@ namespace Transports
         switch (msg->type)
         {
           case SatelliteRequest::TYPE_INLINEMSG:
-            sendIridiumMsg(msg->msg_data.get());
+            sendIridiumMsg(msg);
             break;
 
           case SatelliteRequest::TYPE_TEXT:
