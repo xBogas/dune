@@ -162,6 +162,7 @@ namespace Monitors
       void
       consumePayload(const IMC::Message* msg)
       {
+        inf("Received message %s - timestamp %f", msg->getName(), msg->getTimeStamp());
         m_storage.store(msg);
       }
 
@@ -198,7 +199,12 @@ namespace Monitors
         tr.msg_data.set(*msg);
 
         dispatch(tr);
-        trace("Sent message (%d) %s as inline", tr.req_id, msg->getName());
+        trace("Sent message (%d) %s as inline - ts %f", tr.req_id, msg->getName(),
+              msg->getTimeStamp());
+
+        auto tmp = msg->clone();
+        dispatch(tmp);
+        delete tmp;
       }
 
       void
@@ -236,6 +242,9 @@ namespace Monitors
       void
       onMain(void)
       {
+        if (!isActive())
+          requestActivation();
+
         while (!stopping())
         {
           waitForMessages(1.0);

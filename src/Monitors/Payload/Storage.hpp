@@ -63,14 +63,21 @@ namespace Monitors
         {
           Memory::clear(m_payload[msg->getId()]);
           IMC::Message* new_ptr = msg->clone();
-          new_ptr->setTimeStamp(msg->getTimeStamp());
+          // new_ptr->setTimeStamp(msg->getTimeStamp());
           m_payload[msg->getId()] = new_ptr;
+
+          std::cout << "Stored message " << msg->getName() << " timestamp " << msg->getTimeStamp()
+                    << std::endl;
+
           return false;
         }
 
         IMC::Message* new_ptr = msg->clone();
-        new_ptr->setTimeStamp(msg->getTimeStamp());
+        // new_ptr->setTimeStamp(msg->getTimeStamp());
         m_payload[msg->getId()] = new_ptr;
+
+        std::cout << "Stored message " << msg->getName() << " timestamp " << msg->getTimeStamp()
+                  << std::endl;
         return true;
       }
 

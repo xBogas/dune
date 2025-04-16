@@ -24,109 +24,118 @@
 // https://github.com/LSTS/dune/blob/master/LICENCE.md and                  *
 // http://ec.europa.eu/idabc/eupl.html.                                     *
 //***************************************************************************
-// Author: Jose Pinto                                                       *
+// Author: Bogas                                                            *
 //***************************************************************************
 
 // DUNE headers.
 #include <DUNE/DUNE.hpp>
-#include <DUNE/Network/FragmentedMessage.hpp>
 
-namespace Transports
+namespace Simulators
 {
-  namespace Fragments
+  //! Insert short task description here.
+  //!
+  //! Insert explanation on task behaviour here.
+  //! @author Bogas
+  namespace Producer
   {
     using DUNE_NAMESPACES;
 
     struct Arguments
     {
-      // Reception timeout.
-      float max_age_secs;
+      //! Payload timeout.
+      double timeout;
+      //! Number of samples to send.
+      uint32_t num_samples;
     };
 
     struct Task: public DUNE::Tasks::Task
     {
-      std::map<uint32_t, FragmentedMessage> m_incoming;
-      Time::Counter<float> m_gc_counter;
-      Arguments m_args;
+      Arguments m_args;  //!< Task arguments.
 
+      //! Send watchdog.
+      Counter<double> m_send_wdog;
+
+      //! Constructor.
+      //! @param[in] name task name.
+      //! @param[in] ctx context.
       Task(const std::string& name, Tasks::Context& ctx):
         DUNE::Tasks::Task(name, ctx)
       {
-        param("Reception timeout", m_args.max_age_secs)
-        .defaultValue("1800")
-        .description("Maximum amount of seconds to wait for missing fragments in incoming messages");
+        param("Payload timeout", m_args.timeout)
+          .defaultValue("2.0")
+          .description("Payload timeout in seconds.");
 
-        bind<IMC::MessagePart>(this);
-        m_gc_counter.setTop(120);
-        setEntityState(IMC::EntityState::ESTA_NORMAL, Status::CODE_ACTIVE);
+        param("Number of samples", m_args.num_samples)
+          .defaultValue("5")
+          .description("Number of samples to send.");
       }
 
+      //! Update internal state with new parameter values.
+      void
+      onUpdateParameters(void)
+      { }
+
+      //! Reserve entity identifiers.
+      void
+      onEntityReservation(void)
+      { }
+
+      //! Resolve entity names.
+      void
+      onEntityResolution(void)
+      { }
+
+      //! Acquire resources.
+      void
+      onResourceAcquisition(void)
+      { }
+
+      //! Initialize resources.
+      void
+      onResourceInitialization(void)
+      { }
+
+      //! Release resources.
       void
       onResourceRelease(void)
-      {
-        m_incoming.clear();
-      }
+      { }
 
       void
-      consume(const IMC::MessagePart* msg)
+      send(void)
       {
-        int hash = (msg->uid << 16) | msg->getSource();
+        IMC::VerticalProfile msg;
+        msg.parameter = IMC::VerticalProfile::PROF_CURRENT_VELOCITY;
+        msg.numsamples = m_args.num_samples;
+        msg.lat = 0.0;
+        msg.lon = 0.0;
 
-        if (m_incoming.find(hash) == m_incoming.end())
+        for (size_t i = 0; i < msg.numsamples; i++)
         {
-          FragmentedMessage incMsg;
-          incMsg.setParentTask(this);
-          m_incoming[hash] = incMsg;
+          IMC::ProfileSample sample;
+          sample.depth = i * 10.0;
+          sample.avg = i * 0.1;  // Example value
+
+          msg.samples.push_back(sample);
         }
 
-        debug("Incoming message fragment (%d still missing)",
-              m_incoming[hash].getFragmentsMissing());
-
-        IMC::Message * res = m_incoming[hash].setFragment(msg);
-        if (res != NULL)
-        {
-          war("created message %s - %f", res->getName(), res->getTimeStamp());
-          res->setSource(msg->getSource());
-          res->setDestination(msg->getDestination());
-          // dispatch(res);
-          m_incoming.erase(hash);
-        }
+        msg.setTimeStamp(0.0);
+        inf("Sending message %s - timestamp %f", msg.getName(), msg.getTimeStamp());
+        dispatch(msg, DF_KEEP_TIME);
       }
 
-      void
-      messageRipper(void)
-      {
-        debug("ripping old messages");
-
-        std::map<uint32_t, FragmentedMessage>::iterator it = m_incoming.begin();
-        std::vector<uint32_t> remove;
-        for ( ; it != m_incoming.end(); ++it)
-        {
-          if (it->second.getAge() > m_args.max_age_secs)
-          {
-            remove.push_back(it->first);
-
-            // message has died of natural causes...
-            war(DTR("Removed incoming message from memory (%d fragments were still missing)."),
-                it->second.getFragmentsMissing());
-          }
-        }
-
-        for (size_t i = 0; i < remove.size(); ++i)
-          m_incoming.erase(remove[i]);
-      }
-
+      //! Main loop.
       void
       onMain(void)
       {
+        m_send_wdog.setTop(m_args.timeout);
         while (!stopping())
         {
-          waitForMessages(1.0);
+          waitForMessages(0.1);
 
-          if (m_gc_counter.overflow())
+          if (m_send_wdog.overflow())
           {
-            messageRipper();
-            m_gc_counter.reset();
+            send();
+            m_send_wdog.reset();
           }
         }
       }
