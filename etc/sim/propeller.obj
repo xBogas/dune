@@ -1,0 +1,12 @@
+# Minimal placeholder propeller mesh
+# Wavefront OBJ
+v 0.000 0.000 0.000
+v 0.050 0.000 0.000
+v 0.000 0.010 0.000
+v -0.050 0.000 0.000
+v 0.000 -0.010 0.000
+
+f 1 2 3
+f 1 3 4
+f 1 4 5
+f 1 5 2
