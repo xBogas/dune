@@ -713,7 +713,7 @@ namespace DUNE
       m_ts.delta = now - m_ts.now;
       m_ts.now = now;
 
-      if (m_ts.nearby && m_ts.now - m_ts.end_time >= m_new_ref_timeout)
+      if (m_ts.nearby && m_ts.now - m_ts.end_time >= (m_new_ref_timeout * Clock::getTimeMultiplier()))
       {
         signalError(DTR("expected new path control reference"));
         return;

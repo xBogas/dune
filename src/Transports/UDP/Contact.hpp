@@ -50,7 +50,7 @@ namespace Transports
       void
       setTimeout(float tout)
       {
-        m_counter.setTop(tout);
+        m_counter.setTop(tout * Clock::getTimeMultiplier());
       }
 
       void

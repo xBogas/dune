@@ -285,7 +285,7 @@ namespace Monitors
           msg.req_id=m_req++;
           dispatch(msg);
 
-          inf(DTR("sending IridiumMsg (t:%u) to %s: %s"),
+          debug(DTR("sending IridiumMsg (t:%u) to %s: %s"),
                     timeout, msg.destination.c_str(), msg.txt_data.c_str());
         }
 
@@ -301,7 +301,7 @@ namespace Monitors
               msg.destination = rec;
               msg.req_id=m_req++;
               dispatch(msg);
-              inf(DTR("sending SMS (t:%u) to %s: %s"),
+              debug(DTR("sending SMS (t:%u) to %s: %s"),
                         timeout, msg.destination.c_str(), msg.txt_data.c_str());
             }
           }
@@ -311,7 +311,7 @@ namespace Monitors
             Utils::String::toLowerCase(msg.destination);
             msg.req_id=m_req++;
             dispatch(msg);
-            inf(DTR("sending SMS (t:%u) to %s: %s"),
+            debug(DTR("sending SMS (t:%u) to %s: %s"),
                       timeout, msg.destination.c_str(), msg.txt_data.c_str());
           }
         }

@@ -433,7 +433,7 @@ namespace Monitors
         for (unsigned int i = 0; i < m_record.size(); i++)
         {
           ESRecord& r = m_record[i];
-          if (now - r.time > m_args.report_timeout &&
+          if (now - r.time > (m_args.report_timeout) * Clock::getTimeMultiplier() &&
               r.state != IMC::EntityState::ESTA_FAILURE)
           {
             if (r.monitor)

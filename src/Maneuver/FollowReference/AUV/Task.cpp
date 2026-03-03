@@ -280,15 +280,15 @@ namespace Maneuver
           m_estate = *msg;
           double delta = 0;
 
-          if (m_spec.timeout != 0)
-            delta = Clock::get() - m_last_ref_time;
+          // if (m_spec.timeout != 0)
+          //   delta = Clock::get() - m_last_ref_time;
 
-          if (delta > m_spec.timeout)
-          {
-            m_fref_state.state = IMC::FollowRefState::FR_TIMEOUT;
-            dispatch(m_fref_state);
-            signalError("reference source timed out");
-          }
+          // if (delta > m_spec.timeout)
+          // {
+          //   m_fref_state.state = IMC::FollowRefState::FR_TIMEOUT;
+          //   dispatch(m_fref_state);
+          //   signalError("reference source timed out");
+          // }
         }
 
         void

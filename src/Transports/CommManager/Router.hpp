@@ -149,10 +149,10 @@ namespace Transports
         m_parent->dispatch(msg);
 
         if(req->data_mode == IMC::TransmissionRequest::DMODE_TEXT)
-          m_parent->inf("Status of transmission message (req_id:%d | %s | %s) changed to: %s",
+          m_parent->debug("Status of transmission message (req_id:%d | %s | %s) changed to: %s",
                       req->req_id, message_name.c_str(), req->txt_data.c_str(), info.c_str());
         else
-          m_parent->inf("Status of transmission message (req_id:%d | %s) changed to: %s",
+          m_parent->debug("Status of transmission message (req_id:%d | %s) changed to: %s",
                       req->req_id, message_name.c_str(), info.c_str());
       }
 
@@ -250,7 +250,7 @@ namespace Transports
         {
           if (it->second->deadline <= time)
           {
-            m_parent->inf("Transmission Request %d is expired by %f seconds", it->second->req_id, it->second->deadline - time);
+            m_parent->debug("Transmission Request %d is expired by %f seconds", it->second->req_id, it->second->deadline - time);
             answer(it->second, "Transmission timed out.",
                    IMC::TransmissionStatus::TSTAT_TEMPORARY_FAILURE);
             Memory::clear(it->second);
@@ -264,7 +264,7 @@ namespace Transports
       void
       sendViaAcoustic(const IMC::TransmissionRequest* msg)
       {
-        m_parent->inf("Request to send data over Acoustic to %s (%d)",
+        m_parent->debug("Request to send data over Acoustic to %s (%d)",
                       msg->destination.c_str(), msg->req_id);
 
         AcousticRequest tx;
@@ -338,7 +338,7 @@ namespace Transports
       void
       sendViaSatellite(const IMC::TransmissionRequest* msg, bool plain_text)
       {
-        m_parent->inf("Request to send data over satellite (%d)", msg->req_id);
+        m_parent->debug("Request to send data over satellite (%d)", msg->req_id);
 
         IridiumMsgTx tx;
 
@@ -539,7 +539,7 @@ namespace Transports
       void
       sendViaGSM(const IMC::TransmissionRequest* msg)
       {
-        m_parent->inf("Request to send data over SMS to %s (%d)",
+        m_parent->debug("Request to send data over SMS to %s (%d)",
                       msg->destination.c_str(), msg->req_id);
 
         SmsRequest sms;
@@ -621,7 +621,7 @@ namespace Transports
       void
       sendViaWifi(const IMC::TransmissionRequest* msg)
       {
-        m_parent->inf("Request to send data over TCP to %s (%d)",
+        m_parent->debug("Request to send data over TCP to %s (%d)",
                       msg->destination.c_str(), msg->req_id);
 
         TCPRequest send;

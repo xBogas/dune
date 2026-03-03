@@ -939,7 +939,7 @@ namespace Transports
               if (msg != NULL)
               {
                 dispatch(msg);
-                inf("Requesting report transmission over Iridium.");
+                debug("Requesting report transmission over Iridium.");
                 IMC::TransmissionRequest request;
                 request.setDestination (getSystemId());
                 request.comm_mean = IMC::TransmissionRequest::CMEAN_SATELLITE;
