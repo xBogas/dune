@@ -27,29 +27,73 @@
 // Author: João Bogas                                                       *
 //***************************************************************************
 
-#ifndef SIMULATORS_STONEFISH_SIMULATIONMANAGER_H
-#define SIMULATORS_STONEFISH_SIMULATIONMANAGER_H
 
-#include <functional>
+#ifndef SIMULATORS_STONEFISH_ENGINE_H
+#define SIMULATORS_STONEFISH_ENGINE_H
 
+#include "SimulationManager.h"
 #include "Stonefish.h"
+#include "Sim.h"
 
-using simCallback = std::function<void(sf::SimulationManager&)>;
-
-class SimManager: public sf::SimulationManager
+enum class SimMode
 {
-public:
-  SimManager(sf::Scalar stepsPerSecond, simCallback onStep, const std::string& scenarioPath = "");
-
-  void
-  SimulationStepCompleted(sf::Scalar timeStep) override;
-
-  void
-  BuildScenario(void);
-
-private:
-  simCallback m_onStep;
-  std::string m_scenarioPath;
+  GRAPHICAL,
+  CONSOLE
 };
 
-#endif  // SIMULATORS_STONEFISH_SIMULATIONMANAGER_H
+class Engine
+{
+public:
+  Engine(SimMode mode, const DUNE::FileSystem::Path& scn_fd, double freq, simCallback onStep):
+    m_mode(mode),
+    m_sim(nullptr),
+    m_graphicalApp(nullptr),
+    m_consoleApp(nullptr)
+  {
+    m_sim = new SimManager(freq, onStep, scn_fd.str());
+
+    std::string data_dir = scn_fd.dirname().str() + "/";
+
+    switch (mode)
+    {
+      case SimMode::CONSOLE:
+        m_consoleApp = new sf::ConsoleSimulationApp("DUNE sim", data_dir, m_sim);
+
+        break;
+      case SimMode::GRAPHICAL:
+        m_graphicalApp = new sf::GraphicalSimulationApp("DUNE sim", data_dir, sf::RenderSettings(),
+                                                        sf::HelperSettings(), m_sim);
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  // Load simulation resources.
+  void
+  load(void)
+  {
+    // TODO: 
+  }
+
+  void
+  start(void)
+  {
+    m_mode == SimMode::CONSOLE ? m_consoleApp->StartSimulation() : m_graphicalApp->Run();
+  }
+
+  void
+  exit(void)
+  {
+    m_mode == SimMode::CONSOLE ? m_consoleApp->StopSimulation() : m_graphicalApp->StopSimulation();
+  }
+
+private:
+  SimMode m_mode;
+  SimManager* m_sim;
+  sf::GraphicalSimulationApp* m_graphicalApp;
+  sf::ConsoleSimulationApp* m_consoleApp;
+};
+
+#endif  // SIMULATORS_STONEFISH_ENGINE_H

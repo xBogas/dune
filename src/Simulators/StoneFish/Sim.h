@@ -27,29 +27,41 @@
 // Author: João Bogas                                                       *
 //***************************************************************************
 
-#ifndef SIMULATORS_STONEFISH_SIMULATIONMANAGER_H
-#define SIMULATORS_STONEFISH_SIMULATIONMANAGER_H
 
-#include <functional>
+#ifndef SIMULATORS_STONEFISH_SIM_H
+#define SIMULATORS_STONEFISH_SIM_H
 
 #include "Stonefish.h"
 
-using simCallback = std::function<void(sf::SimulationManager&)>;
-
-class SimManager: public sf::SimulationManager
+class ConsoleSim: public sf::ConsoleSimulationApp
 {
 public:
-  SimManager(sf::Scalar stepsPerSecond, simCallback onStep, const std::string& scenarioPath = "");
+  ConsoleSim(const std::string& title, const std::string& dir, sf::SimulationManager* sim):
+    sf::ConsoleSimulationApp(title, dir, sim)
+  { }
 
   void
-  SimulationStepCompleted(sf::Scalar timeStep) override;
-
-  void
-  BuildScenario(void);
-
-private:
-  simCallback m_onStep;
-  std::string m_scenarioPath;
+  exit(void)
+  {
+    sf::ConsoleSimulationApp::StopSimulation();
+    sf::ConsoleSimulationApp::Quit();
+  }
 };
 
-#endif  // SIMULATORS_STONEFISH_SIMULATIONMANAGER_H
+class GraphicalSim: public sf::GraphicalSimulationApp
+{
+public:
+  GraphicalSim(const std::string& title, const std::string& dir, sf::RenderSettings r,
+               sf::HelperSettings h, sf::SimulationManager* sim):
+    sf::GraphicalSimulationApp(title, dir, r, h, sim)
+  { }
+
+  void
+  exit(void)
+  {
+    sf::GraphicalSimulationApp::StopSimulation();
+    sf::GraphicalSimulationApp::Quit();
+  }
+};
+
+#endif  // SIMULATORS_STONEFISH_SIM_H

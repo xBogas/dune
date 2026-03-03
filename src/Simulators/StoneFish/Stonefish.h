@@ -1,5 +1,7 @@
 
+#ifndef BT_USE_DOUBLE_PRECISION
 #define BT_USE_DOUBLE_PRECISION 1
+#endif
 
 // Common
 #include <Stonefish/StonefishCommon.h>
@@ -15,6 +17,11 @@
 #include <Stonefish/core/ScenarioParser.h>
 #include <Stonefish/core/SimulationApp.h>
 #include <Stonefish/core/SimulationManager.h>
+
+// OpenGL
+#include <Stonefish/graphics/OpenGLConsole.h>
+#include <Stonefish/graphics/OpenGLDataStructs.h>
+#include <Stonefish/graphics/OpenGLPipeline.h>
 
 // Entities - Solids
 #include <Stonefish/entities/solids/Box.h>

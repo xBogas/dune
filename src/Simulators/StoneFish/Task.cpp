@@ -1,5 +1,5 @@
 //***************************************************************************
-// Copyright 2007-2025 Universidade do Porto - Faculdade de Engenharia      *
+// Copyright 2007-2026 Universidade do Porto - Faculdade de Engenharia      *
 // Laboratório de Sistemas e Tecnologia Subaquática (LSTS)                  *
 //***************************************************************************
 // This file is part of DUNE: Unified Navigation Environment.               *
@@ -36,7 +36,7 @@
 
 #include "Stonefish.h"
 
-#include "SimulationApp.h"
+#include "Engine.h"
 #include "SimulationManager.h"
 
 namespace Simulators
@@ -55,15 +55,20 @@ namespace Simulators
       std::string scenario;
       //! Initial position (latitude, longitude, depth).
       std::vector<double> position;
+      //! Enable graphical interface.
+      bool enable_graphics;
     };
 
     struct Task: public DUNE::Tasks::Task
     {
-
-      SimulationApp* m_engine;
+      //! Path to the scenario file to be loaded in the simulation.
+      Path m_scenario;
+      //! Simulation engine instance.
+      Engine* m_engine;
+      //! Robot instance.
       sf::Robot* m_robot;
-
-      Parameters m_args;  //!< Task parameters.
+      //! Task parameters.
+      Parameters m_args;
 
       //! Constructor.
       //! @param[in] name task name.
@@ -74,17 +79,28 @@ namespace Simulators
         m_robot(nullptr)
       {
         param("Scenario Path", m_args.scenario)
-          .description("Path to the scenario file to be loaded in the simulation.");
+          .description("Relative path from the configuration directory to the scenario file to be "
+                       "loaded in the simulation.");
 
         param("Initial Position", m_args.position)
           .defaultValue("0, 0, 0")
           .description("Initial position of the robot. (latitude, longitude, depth)");
+
+        param("Enable Graphics", m_args.enable_graphics)
+          .defaultValue("true")
+          .description("Enable graphical interface for the simulator.");
+
+        bind<IMC::SetThrusterActuation>(this);
       }
 
       //! Update internal state with new parameter values.
       void
       onUpdateParameters(void)
-      { }
+      {
+        m_scenario = m_ctx.dir_cfg / m_args.scenario;
+        if (!m_scenario.exists())
+          throw RestartNeeded("Invalid parameter 'Scenario Path': " + m_args.scenario, 5);
+      }
 
       //! Reserve entity identifiers.
       void
@@ -121,58 +137,77 @@ namespace Simulators
         if (m_engine == nullptr)
           return;
 
-        if (m_engine->getState() == sf::SimulationState::RUNNING)
-          m_engine->exit();
+        m_engine->exit();
       }
 
       void
-      dispatchState(void)
+      consume(const IMC::SetThrusterActuation* msg)
       {
-        if (m_engine == nullptr || m_engine->getSimulationManager() == nullptr)
-          return;
+        (void)msg;
+      }
 
-        m_robot = m_engine->getSimulationManager()->getRobot("basic_auv");
-        if (m_robot == nullptr)
-          err("Failed to find robot with name 'basic_auv' in the scenario.");
-
+      void
+      dispatchState(sf::SimulationManager& simManager)
+      {
+        m_robot = simManager.getRobot("lauv");
         if (m_robot == nullptr)
           return;
 
         // Get robot transform and extract position + Euler angles
         sf::Transform transform = m_robot->getTransform();
-        RobotPose pose = RobotPose::fromTransform(transform);
 
+        // Extract position
+        sf::Vector3 position = transform.getOrigin();
+
+        // Extract Euler angles from rotation matrix
+        sf::Matrix3 rotMatrix = transform.getBasis();
+        sf::Scalar yaw, pitch, roll;
+        rotMatrix.getEulerZYX(yaw, pitch, roll);
+
+        // TODO: As it diverges from the initial position update the lat,lon reference frame
         IMC::SimulatedState sstate;
-        // Position (NED coordinates)
-        sstate.lat = pose.position.y();
-        sstate.lon = pose.position.x();
-        sstate.height = -pose.position.z();
+
+        // Update position
+        sstate.lat = m_args.position[0];
+        sstate.lon = m_args.position[1];
+        sstate.height = m_args.position[2];
+
+        sstate.x = position.x();
+        sstate.y = position.y();
+        sstate.z = position.z();
 
         // Euler angles (in radians)
-        sstate.phi = pose.roll;     // Roll
-        sstate.theta = pose.pitch;  // Pitch
-        sstate.psi = pose.yaw;      // Yaw
+        sstate.phi = roll;     // Roll
+        sstate.theta = pitch;  // Pitch
+        sstate.psi = yaw;      // Yaw
+
+        // Velocities
+        sstate.u = 0.0;  // Body-Fixed xx Linear Velocity
+        sstate.v = 0.0;  // Body-Fixed yy Linear Velocity
+        sstate.w = 0.0;  // Body-Fixed zz Linear Velocity
+
+        // Angular velocities
+        sstate.p = 0.0;  // Angular Velocity in x
+        sstate.q = 0.0;  // Angular Velocity in y
+        sstate.r = 0.0;  // Angular Velocity in z
 
         dispatch(sstate);
-
-        inf("Dispatched SimulatedState: lat=%.6f, lon=%.6f, height=%.2f, phi=%.2f, theta=%.2f, "
-            "psi=%.2f",
-            sstate.lat, sstate.lon, sstate.height, sstate.phi, sstate.theta, sstate.psi);
       }
 
       void
       runSim(void)
       {
-        std::string scenarioPath = "/home/bogas/workspace/dune/sim/source/etc/sim/basic.scn";
-        std::string dataDir = "/home/bogas/workspace/dune/sim/source/etc/sim/";
         double hz = 100.0;
 
-        inf("Using scenario file: %s", scenarioPath.c_str());
-        inf("Using data directory: %s", dataDir.c_str());
+        inf("Using scenario file: %s", m_scenario.c_str());
+        inf("Graphics %s", m_args.enable_graphics ? "enabled" : "disabled");
 
-        SimulationEngine sim(hz, std::bind(&Task::dispatchState, this), scenarioPath);
-        m_engine = new SimulationApp("StoneFish Simulator", dataDir, &sim);
-        m_engine->Run();
+        SimMode mode = m_args.enable_graphics ? SimMode::GRAPHICAL : SimMode::CONSOLE;
+
+        simCallback onStep = std::bind(&Task::dispatchState, this, std::placeholders::_1);
+        m_engine = new Engine(mode, m_scenario, hz, onStep);
+        m_engine->load();
+        m_engine->start();
       }
 
       //! Main loop.

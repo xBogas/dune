@@ -5,28 +5,28 @@
 
 #include <DUNE/Streams/Terminal.hpp>
 
-#include "SimulationManager.h"
-
 #include "Stonefish.h"
 #include <Stonefish/entities/solids/Sphere.h>
 #include <Stonefish/entities/statics/Plane.h>
 
-SimulationEngine::SimulationEngine(sf::Scalar stepsPerSecond, std::function<void(void)> onStep,
-                                   const std::string& scenarioPath):
+#include "SimulationManager.h"
+
+SimManager::SimManager(sf::Scalar stepsPerSecond, simCallback onStep,
+                       const std::string& scenarioPath):
   SimulationManager(stepsPerSecond),
   m_onStep(onStep),
   m_scenarioPath(scenarioPath)
 { }
 
 void
-SimulationEngine::SimulationStepCompleted(sf::Scalar timeStep)
+SimManager::SimulationStepCompleted(sf::Scalar timeStep)
 {
   (void)timeStep;  // Unused parameter
-  m_onStep();
+  m_onStep(*this);
 }
 
 void
-SimulationEngine::BuildScenario(void)
+SimManager::BuildScenario(void)
 {
   if (m_scenarioPath.empty())
   {
@@ -38,7 +38,7 @@ SimulationEngine::BuildScenario(void)
   if (!parser.Parse(m_scenarioPath))
   {
     DUNE_ERR("Stonefish", "Failed to parse scenario file: " << m_scenarioPath.c_str());
-    std::vector logs = parser.getLog();
+    std::vector<sf::ConsoleMessage> logs = parser.getLog();
     for (sf::ConsoleMessage& log : logs)
     {
       switch (log.type)
