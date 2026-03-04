@@ -28,12 +28,15 @@
 //***************************************************************************
 
 // ISO C++ 98 headers.
+#include <csignal>
+#include <cstdio>
+#include <cstdlib>
+#include <cxxabi.h>
+#include <execinfo.h>
 #include <iostream>
+#include <stack>
 #include <stdexcept>
 #include <string>
-#include <cstdlib>
-#include <cstdio>
-#include <stack>
 
 // DUNE headers.
 #include <DUNE/DUNE.hpp>
@@ -43,28 +46,28 @@
 
 // POSIX headers.
 #if defined(DUNE_SYS_HAS_UNISTD_H)
-#  include <unistd.h>
+#include <unistd.h>
 #endif
 
 #if defined(DUNE_SYS_HAS_SIGNAL_H)
-#  include <signal.h>
+#include <signal.h>
 #endif
 
 #if defined(DUNE_SYS_HAS_SYS_WAIT_H)
-#  include <sys/wait.h>
+#include <sys/wait.h>
 #endif
 
 #if defined(DUNE_SYS_HAS_SYS_RESOURCE_H)
-#  include <sys/resource.h>
+#include <sys/resource.h>
 #endif
 
 // Microsoft Windows headers.
 #if defined(DUNE_SYS_HAS_WINDOWS_H)
-#  include <windows.h>
+#include <windows.h>
 #endif
 
 #if defined(DUNE_SYS_HAS_SYS_REBOOT_H)
-#  include <sys/reboot.h>
+#include <sys/reboot.h>
 #endif
 
 void
@@ -108,6 +111,47 @@ handleTerminate(DWORD type)
 
 #endif
 
+static void
+onCrash(int sig)
+{
+  dune_term.lock();
+
+  void* frames[64];
+  int n = backtrace(frames, 64);
+  std::fprintf(stderr, "Crash signal received (%d)\n", sig);
+
+  char** symbols = backtrace_symbols(frames, n);
+  if (symbols == NULL)
+  {
+    backtrace_symbols_fd(frames, n, STDERR_FILENO);
+    _Exit(128 + sig);
+  }
+
+  for (int i = 0; i < n; ++i)
+  {
+    std::string line = symbols[i];
+    std::string::size_type begin = line.find('(');
+    std::string::size_type plus = line.find('+', begin);
+
+    if (begin != std::string::npos && plus != std::string::npos && plus > begin + 1)
+    {
+      std::string mangled = line.substr(begin + 1, plus - begin - 1);
+      int status = 0;
+      char* demangled = abi::__cxa_demangle(mangled.c_str(), 0, 0, &status);
+      if (status == 0 && demangled != 0)
+      {
+        line.replace(begin + 1, plus - begin - 1, demangled);
+      }
+      std::free(demangled);
+    }
+
+    std::fprintf(stderr, "%s\n", line.c_str());
+  }
+
+  std::free(symbols);
+  _Exit(128 + sig);  // avoid unsafe cleanup in signal context
+}
+
 void
 setDaemonSignalHandlers(void)
 {
@@ -130,6 +174,9 @@ setDaemonSignalHandlers(void)
   sigaction(SIGCHLD, &actions, 0);
   sigaction(SIGCONT, &actions, 0);
   sigaction(SIGPIPE, &actions, 0);
+
+  std::signal(SIGSEGV, onCrash);
+  std::signal(SIGABRT, onCrash);
 
   // Enable core dumps.
   struct rlimit rlim;
@@ -195,7 +242,7 @@ runDaemon(DUNE::Daemon& daemon)
     return 1;
   }
 
-  if(call_reboot)
+  if (call_reboot)
   {
     DUNE_WRN("Daemon", "Rebooting");
 
@@ -220,26 +267,19 @@ main(int argc, char** argv)
 
   OptionParser options;
   options.executable("dune")
-  .program(DUNE_SHORT_NAME)
-  .copyright(DUNE_COPYRIGHT)
-  .email(DUNE_CONTACT)
-  .version(versions.c_str())
-  .date(getCompileDate())
-  .arch(DUNE_SYSTEM_NAME)
-  .add("-d", "--config-dir",
-       "Configuration directory", "DIR")
-  .add("-w", "--www-dir",
-       "HTTP server base directory", "DIR")
-  .add("-c", "--config-file",
-       "Load configuration file CONFIG", "CONFIG")
-  .add("-m", "--lock-memory",
-       "Lock memory")
-  .add("-p", "--profiles",
-       "Execution Profiles", "PROFILES")
-  .add("-V", "--vehicle",
-       "Vehicle name override", "VEHICLE")
-  .add("-X", "--dump-params-xml",
-       "Dump parameters XML to folder DIR", "DIR");
+    .program(DUNE_SHORT_NAME)
+    .copyright(DUNE_COPYRIGHT)
+    .email(DUNE_CONTACT)
+    .version(versions.c_str())
+    .date(getCompileDate())
+    .arch(DUNE_SYSTEM_NAME)
+    .add("-d", "--config-dir", "Configuration directory", "DIR")
+    .add("-w", "--www-dir", "HTTP server base directory", "DIR")
+    .add("-c", "--config-file", "Load configuration file CONFIG", "CONFIG")
+    .add("-m", "--lock-memory", "Lock memory")
+    .add("-p", "--profiles", "Execution Profiles", "PROFILES")
+    .add("-V", "--vehicle", "Vehicle name override", "VEHICLE")
+    .add("-X", "--dump-params-xml", "Dump parameters XML to folder DIR", "DIR");
 
   // Parse command line arguments.
   if (!options.parse(argc, argv))
