@@ -306,6 +306,9 @@ set_source_files_properties(src/Main/Daemon.cpp
   COMPILE_FLAGS "${DUNE_CXX_FLAGS}")
 target_link_libraries(dune dune-core ${DUNE_SYS_LIBS} ${DUNE_STATIC_TASKS}
   ${DUNE_VENDOR_LIBS})
+if(NOT DUNE_OS_WINDOWS AND DEBUG)
+  set_property(TARGET dune APPEND_STRING PROPERTY LINK_FLAGS_DEBUG " -rdynamic -fno-omit-frame-pointer")
+endif(NOT DUNE_OS_WINDOWS AND DEBUG)
 
 # Launcher.
 add_executable(dune-launcher
@@ -316,6 +319,9 @@ set_source_files_properties(src/Main/Launcher.cpp
   COMPILE_FLAGS "${DUNE_CXX_FLAGS}")
 target_link_libraries(dune-launcher dune-core ${DUNE_SYS_LIBS}
   ${DUNE_VENDOR_LIBS})
+if(NOT DUNE_OS_WINDOWS AND DEBUG)
+  set_property(TARGET dune-launcher APPEND_STRING PROPERTY LINK_FLAGS_DEBUG " -rdynamic -fno-omit-frame-pointer")
+endif(NOT DUNE_OS_WINDOWS AND DEBUG)
 
 ##########################################################################
 #                          Simple programs                               #
@@ -330,6 +336,10 @@ macro(dune_program source exclude)
   endif(${exclude})
   set_target_properties(${executable} PROPERTIES COMPILE_FLAGS "${DUNE_CXX_FLAGS}")
   target_link_libraries(${executable} dune-core ${DUNE_SYS_LIBS} ${DUNE_VENDOR_LIBS})
+  if(NOT DUNE_OS_WINDOWS)
+    set_property(TARGET ${executable} APPEND_STRING PROPERTY LINK_FLAGS_DEBUG " -rdynamic")
+    set_property(TARGET ${executable} APPEND_STRING PROPERTY LINK_FLAGS_RELWITHDEBINFO " -rdynamic")
+  endif(NOT DUNE_OS_WINDOWS)
 endmacro(dune_program source)
 
 file(GLOB programs programs/*.cpp)
