@@ -27,13 +27,27 @@
 // Author: João Bogas                                                       *
 //***************************************************************************
 
-
 #ifndef SIMULATORS_STONEFISH_SIM_H
 #define SIMULATORS_STONEFISH_SIM_H
 
 #include "Stonefish.h"
 
-class ConsoleSim: public sf::ConsoleSimulationApp
+// Interface for the simulator
+class SimulatorInterface
+{
+public:
+  virtual ~SimulatorInterface() = default;
+
+  /// Start the simulation
+  virtual void
+  start(bool auto_step, double time_step, bool start) = 0;
+
+  /// Exit the simulation
+  virtual void
+  exit(void) = 0;
+};
+
+class ConsoleSim: public sf::ConsoleSimulationApp, public SimulatorInterface
 {
 public:
   ConsoleSim(const std::string& title, const std::string& dir, sf::SimulationManager* sim):
@@ -41,14 +55,26 @@ public:
   { }
 
   void
-  exit(void)
+  start(bool auto_step, double time_step, bool start) override
+  {
+    sf::ConsoleSimulationApp::Run(start, auto_step, sf::Scalar(time_step));
+  }
+
+  void
+  exit(void) override
   {
     sf::ConsoleSimulationApp::StopSimulation();
     sf::ConsoleSimulationApp::Quit();
   }
+
+  void
+  step(void)
+  {
+    sf::ConsoleSimulationApp::StepSimulation();
+  }
 };
 
-class GraphicalSim: public sf::GraphicalSimulationApp
+class GraphicalSim: public sf::GraphicalSimulationApp, public SimulatorInterface
 {
 public:
   GraphicalSim(const std::string& title, const std::string& dir, sf::RenderSettings r,
@@ -57,7 +83,13 @@ public:
   { }
 
   void
-  exit(void)
+  start(bool auto_step, double time_step, bool start) override
+  {
+    sf::GraphicalSimulationApp::Run(start, auto_step, sf::Scalar(time_step));
+  }
+
+  void
+  exit(void) override
   {
     sf::GraphicalSimulationApp::StopSimulation();
     sf::GraphicalSimulationApp::Quit();

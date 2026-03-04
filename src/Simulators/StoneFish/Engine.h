@@ -27,13 +27,12 @@
 // Author: João Bogas                                                       *
 //***************************************************************************
 
-
 #ifndef SIMULATORS_STONEFISH_ENGINE_H
 #define SIMULATORS_STONEFISH_ENGINE_H
 
+#include "Sim.h"
 #include "SimulationManager.h"
 #include "Stonefish.h"
-#include "Sim.h"
 
 enum class SimMode
 {
@@ -46,23 +45,22 @@ class Engine
 public:
   Engine(SimMode mode, const DUNE::FileSystem::Path& scn_fd, double freq, simCallback onStep):
     m_mode(mode),
-    m_sim(nullptr),
-    m_graphicalApp(nullptr),
-    m_consoleApp(nullptr)
+    m_manager(nullptr),
+    m_sim(nullptr)
   {
-    m_sim = new SimManager(freq, onStep, scn_fd.str());
+    m_manager = new SimManager(freq, onStep, scn_fd.str());
 
     std::string data_dir = scn_fd.dirname().str() + "/";
 
     switch (mode)
     {
       case SimMode::CONSOLE:
-        m_consoleApp = new sf::ConsoleSimulationApp("DUNE sim", data_dir, m_sim);
+        m_sim = new ConsoleSim("DUNE sim", data_dir, m_manager);
 
         break;
       case SimMode::GRAPHICAL:
-        m_graphicalApp = new sf::GraphicalSimulationApp("DUNE sim", data_dir, sf::RenderSettings(),
-                                                        sf::HelperSettings(), m_sim);
+        m_sim = new GraphicalSim("DUNE sim", data_dir, sf::RenderSettings(), sf::HelperSettings(),
+                                 m_manager);
         break;
 
       default:
@@ -70,30 +68,34 @@ public:
     }
   }
 
+  // TODO:
   // Load simulation resources.
   void
   load(void)
-  {
-    // TODO: 
-  }
+  { }
 
+  /// @brief Start the simulation
+  /// @param auto_step Automatically step the simulation?
+  /// @param time_step Time step to be used for each simulation update instead of real time (0 means
+  /// real time)
+  /// @param start Automatically start the simulation after initialization?
   void
-  start(void)
+  start(bool auto_step = true, double time_step = 0.0, bool start = true)
   {
-    m_mode == SimMode::CONSOLE ? m_consoleApp->StartSimulation() : m_graphicalApp->Run();
+    m_sim->start(auto_step, time_step, start);
   }
 
+  /// Force the simulation to exit
   void
   exit(void)
   {
-    m_mode == SimMode::CONSOLE ? m_consoleApp->StopSimulation() : m_graphicalApp->StopSimulation();
+    m_sim->exit();
   }
 
 private:
   SimMode m_mode;
-  SimManager* m_sim;
-  sf::GraphicalSimulationApp* m_graphicalApp;
-  sf::ConsoleSimulationApp* m_consoleApp;
+  SimManager* m_manager;
+  SimulatorInterface* m_sim;
 };
 
 #endif  // SIMULATORS_STONEFISH_ENGINE_H
