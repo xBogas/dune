@@ -1,13 +1,16 @@
 <?xml version="1.0"?>
 <scenario>
     <environment>
-        <ned latitude="41.1851" longitude="-8.709"/>
+        <ned latitude="41.1850" longitude="-8.7062"/>
         <ocean>
             <water density="1025.0" jerlov="0.2" temperature="15.0"/>
-            <waves height="0.0"/>
+            <waves height="0.0" period="10.0"/>
             <particles enabled="true"/>
         </ocean>
         <atmosphere>
+            <!-- <wind type="uniform">
+                <velocity xyz="0.5 0.0 0.0"/>
+            </wind> -->
             <sun azimuth="0.0" elevation="45.0"/>
         </atmosphere>
     </environment>
@@ -37,27 +40,49 @@
     </static>
 
     <robot name="lauv" fixed="false" self_collisions="false">
-        <base_link name="hull" type="cylinder" physics="floating">
-            <dimensions radius="0.2" height="1.5"/>
-            <mass value="180.0"/>
-            <inertia ixx="1.0" iyy="15.0" izz="15.0"/>
-            <origin xyz="0.0 0.0 0.0" rpy="0.0 1.5708 0.0"/>
+        <base_link name="hull" type="cylinder" ext_physical="false" ext_visual="true">
+            <dimensions radius="0.15" height="1.15"/>
+            <mass value="75.0"/>
+            <!-- TODO: Fix mass + Volume + Buoyancy! -->
+            <volume value="0.0361"/>
+            <cg xyz="0.0 0.0 0.009" rpy="0.0 0.0 0.0"/>
+            <inertia Ixx="1.0" Iyy="34.0" Izz="34.0" Ixy="0.04" Ixz="2.1" Iyz="2.1"/>
+
             <material name="Hull"/>
+            <origin xyz="0.0 0.0 0.0" rpy="0.0 1.5708 0.0"/>
             <look name="yellow"/>
+
+            <collision>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+                <geometry>
+                    <cylinder radius="0.15" length="1.15"/>
+                </geometry>
+                <material name="Neutral"/>
+            </collision>
+
+            <hydrodynamics>
+                <added_mass>
+                    <linear x="1.0" y="16.0" z="16.0" roll="0.0" pitch="0.0" yaw="0.0"/>
+                </added_mass>
+                <damping>
+                    <linear x="2.4" y="23.0" z="23.0" roll="0.3" pitch="9.7" yaw="9.7"/>
+                    <quadratic x="2.4" y="80.0" z="80.0" roll="0.0006" pitch="9.1" yaw="9.1"/>
+                </damping>
+            </hydrodynamics>
         </base_link>
 
         <actuator name="thruster_surge" type="thruster">
-            <specs max_setpoint="400.0" inverted_setpoint="false" normalized_setpoint="false"/>
-            <propeller diameter="0.1" right="true">
+            <specs max_setpoint="2000.0" inverted_setpoint="false" normalized_setpoint="false"/>
+            <propeller diameter="0.3" right="true">
                 <mesh filename="propeller.obj" scale="1.0"/>
-                <material name="Steel"/>
+                <material name="Neutral"/>
                 <look name="gray"/>
             </propeller>
             <rotor_dynamics type="zero_order"/>
             <thrust_model type="quadratic">
                 <thrust_coeff value="0.05"/>
             </thrust_model>
-            <origin xyz="-0.75 0.0 0.0" rpy="0.0 0.0 0.0"/>
+            <origin xyz="-0.605 0.0 0.0" rpy="0.0 0.0 0.0"/>
             <link name="hull"/>
         </actuator>
 
@@ -71,6 +96,6 @@
             <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
         </sensor>
 
-        <world_transform xyz="0.0 0.0 -1.0" rpy="0.0 1.5708 0.0"/>
+        <world_transform xyz="0.0 0.0 0.0" rpy="0.0 1.5708 0.0"/>
     </robot>
 </scenario>
