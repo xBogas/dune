@@ -160,7 +160,6 @@ namespace Simulators
       void
       dispatchState(sf::SimulationManager& simManager)
       {
-        m_robot = simManager.getRobot(0);
         if (m_robot == nullptr)
         {
           err("Robot not found in the simulation.");
