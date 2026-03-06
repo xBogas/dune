@@ -39,7 +39,7 @@
 #endif
 
 #include "Engine.h"
-#include "SimulationManager.h"
+#include "Factory.h"
 
 namespace Simulators
 {
@@ -68,7 +68,7 @@ namespace Simulators
       //! Simulation engine instance.
       Engine* m_engine;
       //! Robot instance.
-      sf::Robot* m_robot;
+      VehiclePtr m_robot;
       //! Task parameters.
       Parameters m_args;
 
@@ -151,7 +151,10 @@ namespace Simulators
       void
       consume(const IMC::SetThrusterActuation* msg)
       {
-        (void)msg;
+        if (m_robot == nullptr)
+          return;
+
+        // m_robot->setThrusterActuation(msg->id, msg->getValueFP());
       }
 
       void
@@ -166,16 +169,7 @@ namespace Simulators
         }
 
         // Get robot transform and extract position + Euler angles
-        sf::Transform transform = m_robot->getTransform();
-
-        // Extract position
-        sf::Vector3 position = transform.getOrigin();
-
-        // Extract Euler angles from rotation matrix
-        sf::Matrix3 rotMatrix = transform.getBasis();
-        sf::Scalar yaw, pitch, roll;
-        rotMatrix.getEulerZYX(yaw, pitch, roll);
-
+        Vehicle::State pose = m_robot->getState();
         // TODO: As it diverges from the initial position update the lat,lon reference frame
         IMC::SimulatedState sstate;
 
@@ -184,14 +178,14 @@ namespace Simulators
         sstate.lon = m_args.position[1];
         sstate.height = m_args.position[2];
 
-        sstate.x = position.x();
-        sstate.y = position.y();
-        sstate.z = position.z();
+        sstate.x = pose.position.x();
+        sstate.y = pose.position.y();
+        sstate.z = pose.position.z();
 
         // Euler angles (in radians)
-        sstate.phi = roll;     // Roll
-        sstate.theta = pitch;  // Pitch
-        sstate.psi = yaw;      // Yaw
+        sstate.phi = pose.orientation.x();     // Roll
+        sstate.theta = pose.orientation.y();  // Pitch
+        sstate.psi = pose.orientation.z();      // Yaw
 
         // Velocities
         sstate.u = 0.0;  // Body-Fixed xx Linear Velocity
@@ -209,7 +203,17 @@ namespace Simulators
       void
       getSimResources(sf::SimulationManager& simManager)
       {
-        // TODO: Load robots
+        std::vector<VehiclePtr> vecs = Factory::createVehicles(&simManager);
+        if (vecs.empty())
+        {
+          err("No vehicles found in the simulation.");
+          exit(1);
+          return;
+        }
+
+        // Get robot instance
+        // TODO: Add support for multiple vehicles and select the one to be used based on configuration
+        m_robot = vecs[0];
       }
 
       void
@@ -239,6 +243,7 @@ namespace Simulators
         catch (const std::exception& e)
         {
           err("Exception in main loop: %s", e.what());
+          exit(1);
         }
 
         stop();
