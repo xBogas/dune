@@ -36,6 +36,18 @@ if(STONEFISH_LIB AND STONEFISH_INCLUDE_DIR)
   set(DUNE_SYS_HAS_STONEFISH 1 CACHE INTERNAL "StoneFish library")
   include_directories(${STONEFISH_INCLUDE_DIR})
   dune_add_lib(${STONEFISH_LIB})
+  
+  # Allow manual override of double precision detection
+  option(STONEFISH_FORCE_SINGLE_PRECISION "Force single precision for Stonefish (default: use double)" OFF)
+  
+  if(STONEFISH_FORCE_SINGLE_PRECISION)
+    message(STATUS "StoneFish: Using single precision (manually forced)")
+    set(DUNE_STONEFISH_DOUBLE_PRECISION 0 CACHE INTERNAL "StoneFish double precision")
+  else()
+    # Assume double precision by default (modern Stonefish builds use it)
+    message(STATUS "StoneFish: Using double precision (BT_USE_DOUBLE_PRECISION)")
+    set(DUNE_STONEFISH_DOUBLE_PRECISION 1 CACHE INTERNAL "StoneFish double precision")
+  endif()
 else()
   set(DUNE_SYS_HAS_STONEFISH 0 CACHE INTERNAL "StoneFish library")
 endif()
