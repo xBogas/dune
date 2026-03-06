@@ -98,8 +98,14 @@ namespace Simulators
       onUpdateParameters(void)
       {
         m_scenario = m_ctx.dir_cfg / m_args.scenario;
-        if (!m_scenario.exists())
-          throw RestartNeeded("Invalid parameter 'Scenario Path': " + m_args.scenario, 5);
+        if (m_scenario.exists())
+          return;
+
+        m_scenario = m_ctx.dir_usr_cfg / m_args.scenario;
+        if (m_scenario.exists())
+          return;
+
+        throw RestartNeeded("Invalid parameter 'Scenario Path': " + m_args.scenario, 5);
       }
 
       //! Reserve entity identifiers.
