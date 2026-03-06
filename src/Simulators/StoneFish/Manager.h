@@ -32,25 +32,31 @@
 
 #include <functional>
 
-#include "Stonefish.h"
+#include <Stonefish/core/SimulationManager.h>
 
-using simCallback = std::function<void(sf::SimulationManager&)>;
-
-class SimManager: public sf::SimulationManager
+namespace Simulators
 {
-public:
-  SimManager(sf::Scalar stepsPerSecond, simCallback onStep, simCallback onBuild, const std::string& scenarioPath = "");
+  namespace StoneFish
+  {
+    using simCallback = std::function<void(sf::SimulationManager&)>;
 
-  void
-  SimulationStepCompleted(sf::Scalar timeStep) override;
+    class SimManager: public sf::SimulationManager
+    {
+    public:
+      SimManager(sf::Scalar stepsPerSecond, simCallback onStep, simCallback onBuild,
+                 const std::string& scenarioPath);
 
-  void
-  BuildScenario(void);
+      void
+      SimulationStepCompleted(sf::Scalar timeStep) override;
 
-private:
-  simCallback m_onStep;
-  simCallback m_onBuild;
-  const std::string m_scenarioPath;
-};
+      void
+      BuildScenario(void);
 
+    private:
+      simCallback m_onStep;
+      simCallback m_onBuild;
+      const std::string m_scenarioPath;
+    };
+  }
+}
 #endif  // SIMULATORS_STONEFISH_SIMULATIONMANAGER_H

@@ -30,72 +30,71 @@
 #ifndef SIMULATORS_STONEFISH_ENGINE_H
 #define SIMULATORS_STONEFISH_ENGINE_H
 
-#include "Sim.h"
-#include "SimulationManager.h"
-#include "Stonefish.h"
+#include "Manager.h"
+#include "Simulation.h"
 
-enum class SimMode
+namespace Simulators
 {
-  GRAPHICAL,
-  CONSOLE
-};
-
-class Engine
-{
-public:
-  Engine(SimMode mode, const DUNE::FileSystem::Path& scn_fd, double freq, simCallback onStep):
-    m_mode(mode),
-    m_manager(nullptr),
-    m_sim(nullptr)
+  namespace StoneFish
   {
-    m_manager = new SimManager(freq, onStep, scn_fd.str());
-
-    std::string data_dir = scn_fd.dirname().str() + "/";
-
-    switch (mode)
+    enum class SimMode
     {
-      case SimMode::CONSOLE:
-        m_sim = new ConsoleSim("DUNE sim", data_dir, m_manager);
+      GRAPHICAL,
+      CONSOLE
+    };
 
-        break;
-      case SimMode::GRAPHICAL:
-        m_sim = new GraphicalSim("DUNE sim", data_dir, sf::RenderSettings(), sf::HelperSettings(),
-                                 m_manager);
-        break;
+    class Engine
+    {
+    public:
+      Engine(SimMode mode, const DUNE::FileSystem::Path& scn_fd, double freq, simCallback onStep,
+             simCallback onBuild):
+        m_mode(mode),
+        m_manager(nullptr),
+        m_sim(nullptr)
+      {
+        m_manager = new SimManager(freq, onStep, onBuild, scn_fd.str());
 
-      default:
-        break;
-    }
+        std::string data_dir = scn_fd.dirname().str() + "/";
+
+        switch (mode)
+        {
+          case SimMode::CONSOLE:
+            m_sim = new ConsoleSim("DUNE sim", data_dir, m_manager);
+
+            break;
+          case SimMode::GRAPHICAL:
+            m_sim = new GraphicalSim("DUNE sim", data_dir, sf::RenderSettings(),
+                                     sf::HelperSettings(), m_manager);
+            break;
+
+          default:
+            break;
+        }
+      }
+
+      /// @brief Start the simulation
+      /// @param auto_step Automatically step the simulation?
+      /// @param time_step Time step to be used for each simulation update instead of real time (0
+      /// means real time)
+      /// @param start Automatically start the simulation after initialization?
+      void
+      start(bool auto_step = true, double time_step = 0.0, bool start = true)
+      {
+        m_sim->start(auto_step, time_step, start);
+      }
+
+      /// Force the simulation to exit
+      void
+      exit(void)
+      {
+        m_sim->exit();
+      }
+
+    private:
+      SimMode m_mode;
+      SimManager* m_manager;
+      SimulatorInterface* m_sim;
+    };
   }
-
-  // TODO:
-  // Load simulation resources.
-  void
-  load(void)
-  { }
-
-  /// @brief Start the simulation
-  /// @param auto_step Automatically step the simulation?
-  /// @param time_step Time step to be used for each simulation update instead of real time (0 means
-  /// real time)
-  /// @param start Automatically start the simulation after initialization?
-  void
-  start(bool auto_step = true, double time_step = 0.0, bool start = true)
-  {
-    m_sim->start(auto_step, time_step, start);
-  }
-
-  /// Force the simulation to exit
-  void
-  exit(void)
-  {
-    m_sim->exit();
-  }
-
-private:
-  SimMode m_mode;
-  SimManager* m_manager;
-  SimulatorInterface* m_sim;
-};
-
+}
 #endif  // SIMULATORS_STONEFISH_ENGINE_H

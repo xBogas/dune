@@ -34,7 +34,9 @@
 // DUNE headers.
 #include <DUNE/DUNE.hpp>
 
-#include "Stonefish.h"
+#ifndef BT_USE_DOUBLE_PRECISION
+#define BT_USE_DOUBLE_PRECISION 1
+#endif
 
 #include "Engine.h"
 #include "SimulationManager.h"
