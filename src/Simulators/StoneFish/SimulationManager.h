@@ -39,7 +39,7 @@ using simCallback = std::function<void(sf::SimulationManager&)>;
 class SimManager: public sf::SimulationManager
 {
 public:
-  SimManager(sf::Scalar stepsPerSecond, simCallback onStep, const std::string& scenarioPath = "");
+  SimManager(sf::Scalar stepsPerSecond, simCallback onStep, simCallback onBuild, const std::string& scenarioPath = "");
 
   void
   SimulationStepCompleted(sf::Scalar timeStep) override;
@@ -49,7 +49,8 @@ public:
 
 private:
   simCallback m_onStep;
-  std::string m_scenarioPath;
+  simCallback m_onBuild;
+  const std::string m_scenarioPath;
 };
 
 #endif  // SIMULATORS_STONEFISH_SIMULATIONMANAGER_H

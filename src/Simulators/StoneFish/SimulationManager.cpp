@@ -11,10 +11,11 @@
 
 #include "SimulationManager.h"
 
-SimManager::SimManager(sf::Scalar stepsPerSecond, simCallback onStep,
+SimManager::SimManager(sf::Scalar stepsPerSecond, simCallback onStep, simCallback onBuild,
                        const std::string& scenarioPath):
   SimulationManager(stepsPerSecond),
   m_onStep(onStep),
+  m_onBuild(onBuild),
   m_scenarioPath(scenarioPath)
 { }
 
@@ -33,30 +34,38 @@ SimManager::BuildScenario(void)
     throw std::runtime_error("Scenario path is empty. Cannot build scenario.");
   }
 
+
+  throw std::runtime_error("Failed to build scenario from file: " + m_scenarioPath);
+
   // Load scenario from XML file using ScenarioParser
   sf::ScenarioParser parser(this);
-  if (!parser.Parse(m_scenarioPath))
+  if (parser.Parse(m_scenarioPath))
   {
-    DUNE_ERR("Stonefish", "Failed to parse scenario file: " << m_scenarioPath.c_str());
-    std::vector<sf::ConsoleMessage> logs = parser.getLog();
-    for (sf::ConsoleMessage& log : logs)
-    {
-      switch (log.type)
-      {
-        case sf::MessageType::INFO:
+    m_onBuild(*this);
+    return;
+  }
 
-          DUNE_MSG("Stonefish", log.text);
-          break;
-        case sf::MessageType::WARNING:
-          DUNE_WRN("Stonefish", log.text);
-          break;
-        case sf::MessageType::ERROR:
-          DUNE_ERR("Stonefish", log.text);
-          break;
-        case sf::MessageType::CRITICAL:
-          DUNE_ERR("Stonefish", "CRITICAL: " << log.text);
-          break;
-      }
+  DUNE_ERR("Stonefish", "Failed to parse scenario file: " << m_scenarioPath.c_str());
+  std::vector<sf::ConsoleMessage> logs = parser.getLog();
+  for (sf::ConsoleMessage& log : logs)
+  {
+    switch (log.type)
+    {
+      case sf::MessageType::INFO:
+
+        DUNE_MSG("Stonefish", log.text);
+        break;
+      case sf::MessageType::WARNING:
+        DUNE_WRN("Stonefish", log.text);
+        break;
+      case sf::MessageType::ERROR:
+        DUNE_ERR("Stonefish", log.text);
+        break;
+      case sf::MessageType::CRITICAL:
+        DUNE_ERR("Stonefish", "CRITICAL: " << log.text);
+        break;
     }
   }
+
+  throw std::runtime_error("Failed to build scenario from file: " + m_scenarioPath);
 }

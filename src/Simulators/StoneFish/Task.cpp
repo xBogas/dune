@@ -155,9 +155,13 @@ namespace Simulators
       void
       dispatchState(sf::SimulationManager& simManager)
       {
-        m_robot = simManager.getRobot("lauv");
+        m_robot = simManager.getRobot(0);
         if (m_robot == nullptr)
+        {
+          err("Robot not found in the simulation.");
+          exit(1);
           return;
+        }
 
         // Get robot transform and extract position + Euler angles
         sf::Transform transform = m_robot->getTransform();
@@ -201,6 +205,12 @@ namespace Simulators
       }
 
       void
+      getSimResources(sf::SimulationManager& simManager)
+      {
+        // TODO: Load robots
+      }
+
+      void
       runSim(void)
       {
         double hz = 100.0;
@@ -211,8 +221,8 @@ namespace Simulators
         SimMode mode = m_args.enable_graphics ? SimMode::GRAPHICAL : SimMode::CONSOLE;
 
         simCallback onStep = std::bind(&Task::dispatchState, this, std::placeholders::_1);
-        m_engine = new Engine(mode, m_scenario, hz, onStep);
-        m_engine->load();
+        simCallback onBuild = std::bind(&Task::getSimResources, this, std::placeholders::_1);
+        m_engine = new Engine(mode, m_scenario, hz, onStep, onBuild);
         m_engine->start();
       }
 
