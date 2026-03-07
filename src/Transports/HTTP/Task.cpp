@@ -232,9 +232,9 @@ namespace Transports
         {
           Path path;
           if (std::strcmp("/", uri) == 0)
-            path = m_ctx.dir_www / "index.html";
+            path = m_ctx.dir_www / "http" / "index.html";
           else
-            path = m_ctx.dir_www / uri;
+            path = m_ctx.dir_www / "http" / uri;
 
           sendStaticFile(sock, headers, path);
         }
