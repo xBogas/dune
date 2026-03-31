@@ -225,14 +225,24 @@ namespace Transports
       {
         if (!m_args->auth_mode)
         {
-          const char* user = m_args->usr.empty() ? nullptr : m_args->usr.c_str();
-          const char* password = m_args->pw.empty() ? nullptr : m_args->pw.c_str();
-          checkRC(mosquitto_username_pw_set(m_mosq, user, password));
+          setUserPassword();
           return;
         }
 
-        FileSystem::Path ca(m_args->ca_path), cert(m_args->cert_path), key(m_args->key_path);
+        setTLS();
+      }
 
+      void
+      setUserPassword(void)
+      {
+        const char* user = m_args->usr.empty() ? nullptr : m_args->usr.c_str();
+        const char* password = m_args->pw.empty() ? nullptr : m_args->pw.c_str();
+        checkRC(mosquitto_username_pw_set(m_mosq, user, password));
+      }
+
+      void
+      setTLS(void)
+      {
         const char* cafile = ca.isFile() ? ca.c_str() : nullptr;
         const char* capath = ca.exists() ? ca.c_str() : nullptr;
         if (cafile == nullptr && capath == nullptr)
