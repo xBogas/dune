@@ -37,30 +37,30 @@
 
 namespace Transports
 {
-  //! Insert short task description here.
-  //!
-  //! Insert explanation on task behaviour here.
-  //! @author Luis Venancio
   namespace MQTT
   {
     using DUNE_NAMESPACES;
 
-    //! Maximum topic length (in bytes)
-    const uint32_t c_max_topic = 65536;
+    //! MQTT protocol allows up to 65535 bytes for topic length
+    const uint32_t c_max_topic = 65535;
     //! Maximum payload length (in bytes)
     // TODO: This is too much!!
     // const uint32_t c_max_payload = 268435455; // 255 MB
-    const uint32_t c_max_payload = 1048576; // 1 MB
+    const uint32_t c_max_payload = 1048576;  // 1 MB
 
+    class MQTTError: public std::runtime_error
+    {
+    public:
+      MQTTError(const std::string& msg, const char* err_msg):
+        std::runtime_error(msg + ": " + (err_msg == nullptr ? "unknown error" : err_msg))
+      { }
+    };
 
-    static void* mosq_user_data = NULL;
-    static std::string mosq_pw = "";
-    class MosquittoClient: public Concurrency::Thread
+    class MosquittoClient
     {
     public:
       //! Arguments
-      struct
-      Arguments
+      struct Arguments
       {
         //! Client id
         std::string client_id;
@@ -90,25 +90,20 @@ namespace Transports
       //! Constructor.
       //! @param[in] task parent task.
       MosquittoClient(Tasks::Task* task, const Arguments* args):
-      m_task(task),
-      m_args(args)
+        m_task(task),
+        m_args(args)
       {
         // Clear errors
         m_err_str.clear();
 
-        //required by mosquitto_lib_init()
-        mosquitto_threaded_set(m_mosq, true);
-
         // Initialize library
-	      mosquitto_lib_init();
-        try
-        {
-          m_mosq = mosquitto_new(m_args->client_id.c_str(), true, this);
-        }
-        catch(const std::exception& e)
-        {
-          throw std::runtime_error(String::str("Client error: %s", e.what()).c_str());
-        }
+        int rv = mosquitto_lib_init();
+        if (rv != MOSQ_ERR_SUCCESS)
+          throw MQTTError("mosquitto_lib_init() failed", mosquitto_strerror(rv));
+
+        m_mosq = mosquitto_new(nullptr, true, this);
+        if (m_mosq == nullptr)
+          throw MQTTError("mosquitto_new() failed", strerror(errno));
 
         // Authetication
         setAuthentication();
@@ -123,21 +118,21 @@ namespace Transports
       //! Destructor.
       ~MosquittoClient(void)
       {
-        // libmosquitto cleanup
-		    mosquitto_destroy(m_mosq);
+        stop();
+        mosquitto_destroy(m_mosq);
         mosquitto_lib_cleanup();
       }
 
       void
-      subscribe(std::string topic)
+      subscribe(const std::string& topic)
       {
         checkRC(mosquitto_subscribe(m_mosq, NULL, topic.c_str(), 0));
       }
 
       void
-      subscribe(std::vector<std::string> topics)
+      subscribe(const std::vector<std::string>& topics)
       {
-        for(unsigned i = 0; i < topics.size(); i++)
+        for (unsigned i = 0; i < topics.size(); i++)
           subscribe(topics[i]);
       }
 
@@ -167,32 +162,36 @@ namespace Transports
         std::strcpy(topic, msg.topic);
         std::memcpy(payload, (uint8_t*)msg.payload, msg.payloadlen);
         *payload_length = msg.payloadlen;
-        
+
         return true;
       }
 
       void
-      publish(std::string topic, uint8_t* payload, uint32_t payload_length)
+      publish(const std::string& topic, uint8_t* payload, uint32_t payload_length)
       {
-        checkRC(mosquitto_publish(m_mosq, NULL, topic.c_str(), 
-                                  payload_length, payload, 0, m_args->retain));
-        m_task->spew("sent: %s: %s", topic.c_str(), sanitize(std::string((char*)payload, payload_length).c_str()).c_str());
+        checkRC(mosquitto_publish(m_mosq, NULL, topic.c_str(), payload_length, payload, 0,
+                                  m_args->retain));
+        m_task->spew("sent: %s: %s", topic.c_str(),
+                     sanitize(std::string((char*)payload, payload_length).c_str()).c_str());
       }
 
       void
-      publish(std::string topic, std::string payload)
+      publish(const std::string& topic, const std::string& payload)
       {
         publish(topic, (uint8_t*)payload.c_str(), payload.size());
       }
 
-      //! Main loop
       void
-      run(void)
+      start(void)
       {
-        while (!isStopping())
-        {
-          checkRC(mosquitto_loop(m_mosq, -1, 1));
-        }
+        checkRC(mosquitto_loop_start(m_mosq));
+      }
+
+      void
+      stop(void)
+      {
+        mosquitto_disconnect(m_mosq);
+        mosquitto_loop_stop(m_mosq, false);
       }
 
       bool
@@ -214,46 +213,43 @@ namespace Transports
       //! Arguments
       const Arguments* m_args;
       //! Mosquitto instance
-	    mosquitto *m_mosq;
+      mosquitto* m_mosq;
       //! Message queue
       TSQueue<mosquitto_message> m_queue;
-      //! Error string. Since the client runs on a separate thread 
+      //! Error string. Since the client runs on a separate thread
       //! the string is used as a flag to poll for client error.
       std::string m_err_str;
 
       void
-      setAuthentication()
+      setAuthentication(void)
       {
-        if(!m_args->auth_mode)// TODO: Certificate authentication, as default
-        {  
-          // User + password login
-          const char* user = m_args->usr.empty() ? NULL : m_args->usr.c_str();
-          const char* password = m_args->pw.empty() ? NULL : m_args->pw.c_str();
+        if (!m_args->auth_mode)
+        {
+          const char* user = m_args->usr.empty() ? nullptr : m_args->usr.c_str();
+          const char* password = m_args->pw.empty() ? nullptr : m_args->pw.c_str();
           checkRC(mosquitto_username_pw_set(m_mosq, user, password));
           return;
         }
-        FileSystem::Path cert_auth(m_args->ca_path), cert(m_args->cert_path), key(m_args->key_path);
 
-        const char* cafile = cert_auth.isFile() ? cert_auth.c_str() : NULL;
-        const char* capath = cert_auth.exists() ? cert_auth.c_str() : NULL;
-        if (cafile == NULL && capath == NULL)
-          std::runtime_error("[task param] - Certificate authority path invalid");
+        FileSystem::Path ca(m_args->ca_path), cert(m_args->cert_path), key(m_args->key_path);
 
-        const char* certfile = cert.isFile() ? cert.c_str() : NULL;
-        const char* keyfile = key.isFile() ? key.c_str() : NULL;
-        if ((certfile == NULL) ^ (keyfile == NULL))
-          std::runtime_error("[task param] - Certificate authority path invalid");
+        const char* cafile = ca.isFile() ? ca.c_str() : nullptr;
+        const char* capath = ca.exists() ? ca.c_str() : nullptr;
+        if (cafile == nullptr && capath == nullptr)
+          throw MQTTError("Certificate authority path is invalid", nullptr);
 
-        mosq_user_data = mosquitto_userdata(m_mosq);
-        m_task->inf(DTR("%s"), cafile);
-        m_task->inf(DTR("%s"), certfile);
-        m_task->inf(DTR("%s"), keyfile);
-        checkRC(mosquitto_tls_set(m_mosq, cafile, capath, certfile, keyfile, NULL));
-        checkRC(mosquitto_tls_opts_set(m_mosq, 0, NULL, NULL));
+        const char* certfile = cert.isFile() ? cert.c_str() : nullptr;
+        const char* keyfile = key.isFile() ? key.c_str() : nullptr;
+        if ((certfile == nullptr) ^ (keyfile == nullptr))
+          throw MQTTError("Certificate and key must both be provided", nullptr);
+
+        int (*pw_cb)(char*, int, int, void*) = m_args->pw.empty() ? nullptr : on_tls;
+        checkRC(mosquitto_tls_set(m_mosq, cafile, capath, certfile, keyfile, pw_cb));
+        checkRC(mosquitto_tls_opts_set(m_mosq, 0, nullptr, nullptr));
       }
 
       void
-      connect()
+      connect(void)
       {
         checkRC(mosquitto_connect(m_mosq, m_args->address.str().c_str(), 
                                           m_args->port, 
@@ -261,7 +257,7 @@ namespace Transports
       }
 
       void
-      setCallbacks()
+      setCallbacks(void)
       {
         mosquitto_connect_callback_set(m_mosq, on_connect);
         mosquitto_disconnect_callback_set(m_mosq, on_disconnect);
@@ -271,10 +267,9 @@ namespace Transports
         mosquitto_unsubscribe_callback_set(m_mosq, on_unsubscribe);
       }
 
-      // CALLBACKS
       //! Connect callback function
-      static void 
-      on_connect(struct mosquitto *mosq, void *obj, int rc)
+      static void
+      on_connect(struct mosquitto* mosq, void* obj, int rc)
       {
         (void) mosq;
         MosquittoClient* self = (MosquittoClient*) obj;
@@ -282,80 +277,82 @@ namespace Transports
         self->m_task->inf("Connected to broker");
         self->checkRC(rc);
       }
-      
+
       //! Disconnect callback function
       static void
-      on_disconnect(struct mosquitto *mosq, void *obj, int rc)
+      on_disconnect(struct mosquitto* mosq, void* obj, int rc)
       {
-        (void) mosq;
+        (void)mosq;
         MosquittoClient* self = (MosquittoClient*)obj;
-        
+
         self->m_task->inf("Disconnected from broker");
         self->checkRC(rc);
       }
-      
+
       //! Message callback function
       static void
-      on_message(struct mosquitto *mosq, void *obj, const struct mosquitto_message *msg)
+      on_message(struct mosquitto* mosq, void* obj, const struct mosquitto_message* msg)
       {
-        (void) mosq;
+        (void)mosq;
         MosquittoClient* self = (MosquittoClient*)obj;
 
         mosquitto_message bfr;
         mosquitto_message_copy(&bfr, msg);
         self->m_queue.push(bfr);
-        self->m_task->spew("recv: %s: %s", msg->topic, sanitize(std::string((char*)msg->payload, msg->payloadlen).c_str()).c_str());
+        self->m_task->spew(
+          "recv: %s: %s", msg->topic,
+          sanitize(std::string((char*)msg->payload, msg->payloadlen).c_str()).c_str());
       }
 
       //! Publish callback function
       static void
-      on_publish(struct mosquitto *mosq, void *obj, int msg_id)
+      on_publish(struct mosquitto* mosq, void* obj, int msg_id)
       {
-        (void) mosq;
+        (void)mosq;
         MosquittoClient* self = (MosquittoClient*)obj;
 
         self->m_task->spew("Published msg id: %d", msg_id);
       }
 
       //! Subscribe callback function
-      static void 
-      on_subscribe(struct mosquitto *mosq, void *obj, int msg_id, int sub_count, const int * granted_qos)
+      static void
+      on_subscribe(struct mosquitto* mosq, void* obj, int msg_id, int sub_count,
+                   const int* granted_qos)
       {
-        (void) mosq;
+        (void)mosq;
         MosquittoClient* self = (MosquittoClient*)obj;
 
-        (void) msg_id;
+        (void)msg_id;
         self->m_task->inf("Granted subscriptions: %d", sub_count);
-        (void) granted_qos;
+        (void)granted_qos;
       }
-      
+
       //! Subscribe callback function
-      static void 
-      on_unsubscribe(struct mosquitto *mosq, void *obj, int msg_id)
+      static void
+      on_unsubscribe(struct mosquitto* mosq, void* obj, int msg_id)
       {
-        (void) mosq;
+        (void)mosq;
         MosquittoClient* self = (MosquittoClient*)obj;
 
-        (void) msg_id;
+        (void)msg_id;
         self->m_task->inf("Unsubscribed from topic");
       }
 
-      //? Requires password
-      //! TLS callback for key files decryption
-      //! Must write the password into *buf with size bytes long
-      //! Must return password length
+      //! TLS password callback for encrypted private key files.
+      //! Writes the password into buf (up to size bytes) and returns the length.
       static int
       on_tls(char* buf, int size, int rwflag, void* userdata)
       {
-        buf   = mosq_pw.empty() ? NULL : const_cast<char*>(mosq_pw.c_str());
-        size  = (buf == NULL) ? 0    : mosq_pw.size();
-        //? if (mosq_user_data == NULL); // Do something if NULL ?
-        //? userdata = mosq_user_data;
-        (void)buf;
-        (void)size;
         (void)rwflag;
-        (void)userdata;
-        return size;
+        MosquittoClient* self = (MosquittoClient*)userdata;
+        const std::string& pw = self->m_args->pw;
+
+        if (pw.empty())
+          return 0;
+
+        int len = std::min((int)pw.size(), size);
+        std::memcpy(buf, pw.c_str(), len);
+        return len;
       }
 
       void
