@@ -25,22 +25,15 @@
 # Author: Luis Venâncio                                                    #
 ############################################################################
 
-if(MOSQUITTO)
+dune_test_lib(mosquitto mosquitto_new)
+dune_test_header(mosquitto.h)
 
-  dune_test_lib(mosquitto mosquitto_new)
-  dune_test_header(mosquitto.h)
-
-  if(DUNE_SYS_HAS_LIB_MOSQUITTO AND DUNE_SYS_HAS_MOSQUITTO_H)
-    # Mosquitto Present
-    add_definitions(-DDUNE_USING_MOSQUITTO)
-    set(DUNE_SYS_HAS_MOSQUITTO 1 CACHE INTERNAL "Mosquitto library")
-    set(DUNE_USING_MOSQUITTO 1 CACHE INTERNAL "Mosquitto library")
-
-  else(DUNE_SYS_HAS_LIB_MOSQUITTO AND DUNE_SYS_HAS_MOSQUITTO_H)
-    # Mosquitto not found on the system.
-    message(SEND_ERROR "Mosquitto was not found on the system.")
-    set(DUNE_SYS_HAS_MOSQUITTO 0 CACHE INTERNAL "Mosquitto library")
-    set(DUNE_USING_MOSQUITTO 0 CACHE INTERNAL "Mosquitto library")
-  endif(DUNE_SYS_HAS_LIB_MOSQUITTO AND DUNE_SYS_HAS_MOSQUITTO_H)
-
-endif(MOSQUITTO)
+if(DUNE_SYS_HAS_LIB_MOSQUITTO AND DUNE_SYS_HAS_MOSQUITTO_H)
+  # Mosquitto present.
+  add_definitions(-DDUNE_USING_MOSQUITTO)
+  set(DUNE_SYS_HAS_MOSQUITTO 1 CACHE INTERNAL "Mosquitto library")
+else()
+  # Mosquitto not found on the system.
+  message(STATUS "Mosquitto library disabled: mosquitto.h and/or libmosquitto not found.")
+  set(DUNE_SYS_HAS_MOSQUITTO 0 CACHE INTERNAL "Mosquitto library")
+endif()
