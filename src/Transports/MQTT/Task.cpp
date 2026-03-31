@@ -34,7 +34,6 @@
 // local headers
 #include "MosquittoClient.hpp"
 
-
 namespace Transports
 {
   //! Insert short task description here.
@@ -85,70 +84,70 @@ namespace Transports
       //! @param[in] ctx context.
       Task(const std::string& name, Tasks::Context& ctx):
         DUNE::Tasks::Task(name, ctx),
-        m_client(NULL)
+        m_client(nullptr)
       {
         param("Client ID", m_client_args.client_id)
-        .defaultValue(getSystemName())
-        .description("MQTT client ID.");
+          .defaultValue(getSystemName())
+          .description("MQTT client ID.");
 
         param("Broker Address", m_client_args.address)
-        .defaultValue("")
-        .description("MQTT broker address.");
+          .defaultValue("")
+          .description("MQTT broker address.");
 
         param("Broker Port", m_client_args.port)
-        .defaultValue("1883")
-        .description("MQTT broker port.");
+          .defaultValue("1883")
+          .description("MQTT broker port.");
 
         param("Keepalive Period", m_client_args.keepalive)
-        .defaultValue("60")
-        .units(Units::Second)
-        .description("");
+          .defaultValue("60")
+          .units(Units::Second)
+          .description("Maximum time interval (in seconds) between messages sent or received. If "
+                       "no activity occurs within this period, a PING packet is sent to the broker "
+                       "to maintain the connection.");
 
         param("Retain", m_client_args.retain)
-        .defaultValue("false")
-        .description("Retain messages.");
+          .defaultValue("false")
+          .description("If true, published messages are retained by the broker.");
 
         param("Subscribe Topics", m_args.topics)
-        .defaultValue("")
-        .description("List of topics the task should subscribe to."
-                     "Use \'*\' instead of \'#\'.");
+          .defaultValue("")
+          .description("List of topics the task should subscribe to."
+                       "Use \'*\' instead of \'#\'.");
 
         param("Authentication Mode", m_client_args.auth_mode)
-        .defaultValue("false")
-        .description("Select authentication mode."
-                     "If left blank use user+password."
-                     "If true use SSL/TLS.");
+          .defaultValue("false")
+          .description("Select authentication mode."
+                       "If left blank use user+password."
+                       "If true use SSL/TLS.");
 
         param("Authentication -- User", m_client_args.usr)
-        .defaultValue("admin")
-        .description("User for broker authentication.");
+          .defaultValue("admin")
+          .description("User for broker authentication.");
 
         param("Authentication -- Password", m_client_args.pw)
-        .defaultValue("")
-        .description("Password for broker authentication."
-                     "If left blank only user is sent.");
+          .defaultValue("")
+          .description("Password for broker authentication."
+                       "If left blank only user is sent.");
 
         param("Certificate authority path", m_client_args.ca_path)
-        .defaultValue("")
-        .description("Path to a file/directory containing the trusted CA certificate files.");
+          .defaultValue("")
+          .description("Path to a file/directory containing the trusted CA certificate files.");
 
         param("Certificate path", m_client_args.cert_path)
-        .defaultValue("")
-        .description("Path to a file containing the certificate file for this client.");
+          .defaultValue("")
+          .description("Path to a file containing the certificate file for this client.");
 
         param("Private key path", m_client_args.key_path)
-        .defaultValue("")
-        .description("Path to a file containing the private key for this client.");
+          .defaultValue("")
+          .description("Path to a file containing the private key for this client.");
 
         param("Transports", m_args.messages)
-        .defaultValue("")
-        .description("List of messages to transport");
+          .defaultValue("")
+          .description("List of messages to transport");
 
         param("Basic Name", m_args.basic_name)
-        .defaultValue("IMC")
-        .description("Basic topic name for MQTT messages");
-
-        bind<IMC::MqttTXFrame>(this);
+          .defaultValue("IMC")
+          .description("Basic topic name for MQTT messages");
       }
 
       //! Update internal state with new parameter values.
@@ -163,14 +162,12 @@ namespace Transports
       //! Reserve entity identifiers.
       void
       onEntityReservation(void)
-      {
-      }
+      { }
 
       //! Resolve entity names.
       void
       onEntityResolution(void)
-      {
-      }
+      { }
 
       //! Acquire resources.
       void
@@ -184,14 +181,16 @@ namespace Transports
         {
           m_client = new MosquittoClient(this, &m_client_args);
 
-          if (m_client != NULL)
+          if (m_client != nullptr)
             m_client->start();
         }
-        catch(const std::exception& e)
+        catch (const std::exception& e)
         {
+          m_client = nullptr;
           throw RestartNeeded(String::str("Unable to start client: %s", e.what()).c_str(), 10);
         }
 
+        announceService();
         setEntityState(IMC::EntityState::ESTA_NORMAL, Status::CODE_ACTIVE);
       }
 
@@ -207,37 +206,27 @@ namespace Transports
       void
       onResourceRelease(void)
       {
-        if (m_client != NULL)
-        {
-          m_client->stopAndJoin();
-          delete m_client;
-          m_client = NULL;
-        }
-      }
-
-      void
-      consume(const IMC::MqttTXFrame* msg)
-      {
-        try
-        {
-          std::string mosquitto_payload(msg->payload.begin(), msg->payload.end());
-          m_client->publish(msg->topic, mosquitto_payload);
-        }
-        catch(const std::exception& e)
-        {
-          war(DTR("Failed to publish message %s: %s"), msg->topic.c_str(), e.what());
+        if (m_client == nullptr)
           return;
-        }
+
+        m_client->stop();
+        delete m_client;
+        m_client = nullptr;
       }
 
       void
       consume(const IMC::Message* msg)
       {
-        uint16_t rv;
+        if (!m_client)
+          return;
+
+        uint16_t bytes;
         try
         {
-          rv = IMC::Packet::serialize(msg, m_msg_bfr, c_bfr_size);
-          m_client->publish(String::str("%s/%s/%s", m_args.basic_name, getSystemName(), msg->getName()), m_msg_bfr, rv);
+          bytes = IMC::Packet::serialize(msg, m_msg_bfr, c_bfr_size);
+
+          std::string topic = m_args.basic_name + "/" + getSystemName() + "/" + msg->getName();
+          m_client->publish(topic, m_msg_bfr, bytes);
         }
         catch (const std::exception& e)
         {
@@ -247,7 +236,7 @@ namespace Transports
       }
 
       void
-      onMessage(char *topic, uint8_t *payload, uint32_t payload_length)
+      onMessage(char* topic, uint8_t* payload, uint32_t payload_length)
       {
         char base_name[64];
         sscanf(topic, "%[^/]", base_name);
@@ -258,32 +247,28 @@ namespace Transports
       }
 
       void
-      dispatchRaw(char *topic, uint8_t *payload, uint32_t payload_length)
+      dispatchRaw(char* topic, uint8_t* payload, uint32_t payload_length)
       {
-        IMC::MqttRXFrame msg;
-        msg.topic = topic;
-        msg.payload.reserve(payload_length);
-        for (size_t i = 0; i < payload_length; i++)
-          msg.payload.push_back(payload[i]);
-        
-        dispatch(msg);
+        IMC::DevDataText msg;
+        msg.value = String::str("%s\r\n%.*s", topic, payload_length, payload);
+        dispatch(msg, DF_KEEP_TIME | DF_KEEP_SRC_EID);
       }
 
       void
-      dispatchIMC(char *topic, uint8_t *payload, uint32_t payload_length)
+      dispatchIMC(char* topic, uint8_t* payload, uint32_t payload_length)
       {
         IMC::Message* msg;
         try
         {
           msg = IMC::Packet::deserialize(payload, payload_length);
         }
-        catch(const std::exception& e)
+        catch (const std::exception& e)
         {
           dispatchRaw(topic, payload, payload_length);
           return;
         }
-        
-        dispatch(msg, DF_KEEP_TIME | DF_KEEP_SRC_EID); // ->MqttRXFrame
+
+        dispatch(msg, DF_KEEP_TIME | DF_KEEP_SRC_EID);
 
         if (getDebugLevel() >= DEBUG_LEVEL_SPEW)
         {
@@ -297,7 +282,7 @@ namespace Transports
       }
 
       void
-      announce(void)
+      announceService(void)
       {
         std::stringstream os;
         os << "imc+mqtt://" << "something something we are client" << "/";
