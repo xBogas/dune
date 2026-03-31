@@ -300,7 +300,7 @@ namespace Transports
         MosquittoClient* self = (MosquittoClient*) obj;
 
         self->m_task->inf("Connected to broker");
-        self->checkRC(rc);
+        self->storeRC(rc);
       }
 
       //! Disconnect callback function
@@ -311,7 +311,7 @@ namespace Transports
         MosquittoClient* self = (MosquittoClient*)obj;
 
         self->m_task->inf("Disconnected from broker");
-        self->checkRC(rc);
+        self->storeRC(rc);
       }
 
       //! Message callback function
@@ -380,13 +380,23 @@ namespace Transports
         return len;
       }
 
+      //! Check return code and throw on failure.
+      //! Used for direct API calls (constructor, subscribe, publish).
+      //! @throw MQTTError if code is not MOSQ_ERR_SUCCESS.
       void
-      checkRC(unsigned rc)
+      checkRC(int code)
       {
-        if (rc && m_err_str.empty())
-        {
-          m_err_str = String::str("Client Error: %s", mosquitto_strerror(rc));
-        }
+        if (code != MOSQ_ERR_SUCCESS)
+          throw MQTTError("mosquitto error", mosquitto_strerror(code));
+      }
+
+      //! Store error for deferred reporting.
+      //! Used in callbacks where throwing would crash mosquitto's thread.
+      void
+      storeRC(int code)
+      {
+        if (code && m_err_str.empty())
+          m_err_str = String::str("Client Error: %s", mosquitto_strerror(code));
       }
     };
   }
