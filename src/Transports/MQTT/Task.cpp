@@ -36,11 +36,13 @@
 
 namespace Transports
 {
-  //! Insert short task description here.
-  //! This task requires libmosquitto-dev.
-  //! Install using sudo apt install libmosquitto-dev
-  //!
-  //! Insert explanation on task behaviour here.
+  //! MQTT transport bridge for IMC messages.
+  //! Publishes configured local IMC messages to MQTT topics and subscribes to
+  //! configured topics to ingest MQTT payloads.
+  //! IMC payloads are deserialized and dispatched internally; non-IMC payloads
+  //! are forwarded as text diagnostics.
+  //! Requires libmosquitto (headers and library available at build time).
+  //! On Debian/Ubuntu install with: sudo apt install libmosquitto-dev
   //! @author Luis Venancio
   namespace MQTT
   {
@@ -88,66 +90,66 @@ namespace Transports
       {
         param("Client ID", m_client_args.client_id)
           .defaultValue(getSystemName())
-          .description("MQTT client ID.");
+          .description("Identifier used by this MQTT client when connecting to the broker.");
 
         param("Broker Address", m_client_args.address)
           .defaultValue("")
-          .description("MQTT broker address.");
+          .description("Hostname or IP address of the MQTT broker.");
 
         param("Broker Port", m_client_args.port)
           .defaultValue("1883")
-          .description("MQTT broker port.");
+          .description("TCP port of the MQTT broker.");
 
         param("Keepalive Period", m_client_args.keepalive)
           .defaultValue("60")
           .units(Units::Second)
-          .description("Maximum time interval (in seconds) between messages sent or received. If "
-                       "no activity occurs within this period, a PING packet is sent to the broker "
-                       "to maintain the connection.");
+          .description("Maximum idle interval (in seconds) before sending a keepalive PING to the "
+                       "broker.");
 
-        param("Retain", m_client_args.retain)
+        param("Retain Messages", m_client_args.retain)
           .defaultValue("false")
           .description("If true, published messages are retained by the broker.");
 
         param("Subscribe Topics", m_args.topics)
           .defaultValue("")
-          .description("List of topics the task should subscribe to."
-                       "Use \'*\' instead of \'#\'.");
+          .description("List of MQTT topics to subscribe to. "
+                       "Use '*' instead of '#'.");
 
-        param("Authentication Mode", m_client_args.auth_mode)
+        param("Use TLS", m_client_args.auth_mode)
           .defaultValue("false")
-          .description("Select authentication mode."
-                       "If left blank use user+password."
-                       "If true use SSL/TLS.");
+          .description("Enable TLS for broker connection. "
+                       "If false, username/password authentication is used.");
 
         param("Authentication -- User", m_client_args.usr)
           .defaultValue("admin")
-          .description("User for broker authentication.");
+          .description("Username used for broker authentication (non-TLS mode).");
 
         param("Authentication -- Password", m_client_args.pw)
           .defaultValue("")
-          .description("Password for broker authentication."
-                       "If left blank only user is sent.");
+          .description("Password used for broker authentication. "
+                       "In TLS mode, this value is also used as the private key passphrase."
+                       " If left blank, only the username is sent.");
 
         param("Certificate authority path", m_client_args.ca_path)
           .defaultValue("")
-          .description("Path to a file/directory containing the trusted CA certificate files.");
+          .description("Path to a file or directory containing trusted CA certificates "
+                       "(TLS mode).");
 
         param("Certificate path", m_client_args.cert_path)
           .defaultValue("")
-          .description("Path to a file containing the certificate file for this client.");
+          .description("Path to the client certificate file (TLS mode).");
 
         param("Private key path", m_client_args.key_path)
           .defaultValue("")
-          .description("Path to a file containing the private key for this client.");
+          .description("Path to the client private key file (TLS mode).");
 
         param("Transports", m_args.messages)
           .defaultValue("")
-          .description("List of messages to transport");
+          .description("List of IMC message names to publish to MQTT.");
 
         param("Basic Name", m_args.basic_name)
           .defaultValue("IMC")
-          .description("Basic topic name for MQTT messages");
+          .description("Base topic prefix used for MQTT messages.");
       }
 
       //! Update internal state with new parameter values.
