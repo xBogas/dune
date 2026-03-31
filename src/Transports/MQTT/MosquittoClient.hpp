@@ -243,15 +243,30 @@ namespace Transports
       void
       setTLS(void)
       {
-        const char* cafile = ca.isFile() ? ca.c_str() : nullptr;
-        const char* capath = ca.exists() ? ca.c_str() : nullptr;
-        if (cafile == nullptr && capath == nullptr)
-          throw MQTTError("Certificate authority path is invalid", nullptr);
+        if (m_args->ca_path.empty())
+          throw MQTTError("CA path is required for TLS", nullptr);
 
-        const char* certfile = cert.isFile() ? cert.c_str() : nullptr;
-        const char* keyfile = key.isFile() ? key.c_str() : nullptr;
-        if ((certfile == nullptr) ^ (keyfile == nullptr))
-          throw MQTTError("Certificate and key must both be provided", nullptr);
+        FileSystem::Path ca(m_args->ca_path);
+        const char* cafile = ca.isFile() ? ca.c_str() : nullptr;
+        const char* capath = ca.isDirectory() ? ca.c_str() : nullptr;
+        if (cafile == nullptr && capath == nullptr)
+          throw MQTTError("CA path is not a valid file or directory", m_args->ca_path.c_str());
+
+        const char* certfile = nullptr;
+        const char* keyfile = nullptr;
+        if (!m_args->cert_path.empty() || !m_args->key_path.empty())
+        {
+          FileSystem::Path cert(m_args->cert_path), key(m_args->key_path);
+
+          if (!cert.isFile())
+            throw MQTTError("Certificate file not found", m_args->cert_path.c_str());
+
+          if (!key.isFile())
+            throw MQTTError("Private key file not found", m_args->key_path.c_str());
+
+          certfile = cert.c_str();
+          keyfile = key.c_str();
+        }
 
         int (*pw_cb)(char*, int, int, void*) = m_args->pw.empty() ? nullptr : on_tls;
         checkRC(mosquitto_tls_set(m_mosq, cafile, capath, certfile, keyfile, pw_cb));
