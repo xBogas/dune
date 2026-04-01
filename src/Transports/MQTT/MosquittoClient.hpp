@@ -145,8 +145,8 @@ namespace Transports
       {
         checkRC(mosquitto_publish(m_mosq, NULL, topic.c_str(), payload_length, payload, 0,
                                   m_args->retain));
-        m_task->spew("sent: %s: %s", topic.c_str(),
-                     sanitize(std::string((char*)payload, payload_length).c_str()).c_str());
+
+        m_task->spew("sent message on topic %s (%d bytes)", topic.c_str(), payload_length);
       }
 
       void
@@ -313,7 +313,7 @@ namespace Transports
         (void)mosq;
         MosquittoClient* self = (MosquittoClient*)obj;
 
-        self->m_task->spew("Published msg id: %d", msg_id);
+        self->m_task->trace("Published msg id: %d", msg_id);
       }
 
       //! Subscribe callback function
@@ -325,7 +325,7 @@ namespace Transports
         MosquittoClient* self = (MosquittoClient*)obj;
 
         (void)msg_id;
-        self->m_task->inf("Granted subscriptions: %d", sub_count);
+        self->m_task->debug("Granted subscriptions: %d", sub_count);
         (void)granted_qos;
       }
 
@@ -337,7 +337,7 @@ namespace Transports
         MosquittoClient* self = (MosquittoClient*)obj;
 
         (void)msg_id;
-        self->m_task->inf("Unsubscribed from topic");
+        self->m_task->debug("Unsubscribed msg id: %d", msg_id);
       }
 
       //! TLS password callback for encrypted private key files.
