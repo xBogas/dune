@@ -280,7 +280,7 @@ namespace Transports
       announceService(void)
       {
         std::stringstream os;
-        os << "imc+mqtt://" << "something something we are client" << "/";
+        os << "imc+mqtt://" << m_client_args.address.str() << ":" << m_client_args.port << "/";
 
         IMC::AnnounceService announce;
         announce.service = os.str();
