@@ -70,14 +70,6 @@ namespace Transports
       MosquittoClient::Arguments m_client_args;
       //! Client
       MosquittoClient* m_client;
-      //! Error message
-      std::string m_err_msg;
-      //! Topic buffer
-      char m_topic_bfr[c_max_topic];
-      //! Payload buffer
-      uint8_t m_payload_bfr[c_max_payload];
-      //! Payload length buffer
-      uint32_t m_payloadlen_bfr;
       //! Serialization buffer.
       uint8_t m_msg_bfr[c_bfr_size];
 
@@ -181,7 +173,9 @@ namespace Transports
         // Start client
         try
         {
-          m_client = new MosquittoClient(this, &m_client_args);
+          PacketHandler handler = std::bind(&Task::onMessage, this, std::placeholders::_1,
+                                            std::placeholders::_2, std::placeholders::_3);
+          m_client = new MosquittoClient(this, &m_client_args, handler);
 
           if (m_client != nullptr)
             m_client->start();
@@ -240,9 +234,8 @@ namespace Transports
       void
       onMessage(char* topic, uint8_t* payload, uint32_t payload_length)
       {
-        char base_name[64];
-        sscanf(topic, "%[^/]", base_name);
-        if (base_name == m_args.basic_name)
+        const std::string& prefix = m_args.basic_name;
+        if (std::strncmp(topic, prefix.c_str(), prefix.size()) == 0 && topic[prefix.size()] == '/')
           dispatchIMC(topic, payload, payload_length);
         else
           dispatchRaw(topic, payload, payload_length);
@@ -301,19 +294,7 @@ namespace Transports
       onMain(void)
       {
         while (!stopping())
-        {
           waitForMessages(1.0);
-          if (!m_client)
-            continue;
-
-          if (m_client->hasError(m_err_msg))
-            throw RestartNeeded(m_err_msg.c_str(), 10);
-
-          if (m_client->poll(m_topic_bfr, m_payload_bfr, &m_payloadlen_bfr))
-          {
-            onMessage(m_topic_bfr, m_payload_bfr, m_payloadlen_bfr);
-          }
-        }
       }
     };
   }

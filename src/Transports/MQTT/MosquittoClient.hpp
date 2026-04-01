@@ -33,6 +33,7 @@
 // DUNE headers.
 #include <DUNE/DUNE.hpp>
 
+#include <functional>
 #include <mosquitto.h>
 
 namespace Transports
@@ -55,6 +56,8 @@ namespace Transports
         std::runtime_error(msg + ": " + (err_msg == nullptr ? "unknown error" : err_msg))
       { }
     };
+
+    typedef std::function<void(char*, uint8_t*, uint32_t)> PacketHandler;
 
     class MosquittoClient
     {
@@ -89,9 +92,10 @@ namespace Transports
 
       //! Constructor.
       //! @param[in] task parent task.
-      MosquittoClient(Tasks::Task* task, const Arguments* args):
+      MosquittoClient(Tasks::Task* task, const Arguments* args, const PacketHandler& handler):
         m_task(task),
-        m_args(args)
+        m_args(args),
+        m_msg_handler(handler)
       {
         // Clear errors
         m_err_str.clear();
@@ -136,36 +140,6 @@ namespace Transports
           subscribe(topics[i]);
       }
 
-      bool
-      poll(std::string& topic, std::string& payload)
-      {
-        mosquitto_message msg;
-
-        if (!m_queue.pop(msg))
-          return false;
-
-        // TODO: Sanitize string
-        topic = std::string(msg.topic);
-        payload = std::string((char*)msg.payload, msg.payloadlen);
-
-        return true;
-      }
-
-      bool
-      poll(char* topic, uint8_t* payload, uint32_t* payload_length)
-      {
-        mosquitto_message msg;
-
-        if (!m_queue.pop(msg))
-          return false;
-
-        std::strcpy(topic, msg.topic);
-        std::memcpy(payload, (uint8_t*)msg.payload, msg.payloadlen);
-        *payload_length = msg.payloadlen;
-
-        return true;
-      }
-
       void
       publish(const std::string& topic, uint8_t* payload, uint32_t payload_length)
       {
@@ -195,16 +169,9 @@ namespace Transports
       }
 
       bool
-      hasError(std::string& err_msg)
+      hasError(void)
       {
-        if (!m_err_str.empty())
-        {
-          err_msg = m_err_str;
-          m_err_str.clear();
-          return true;
-        }
-
-        return false;
+        return !m_err_str.empty();
       }
 
     private:
@@ -212,6 +179,8 @@ namespace Transports
       Tasks::Task* m_task;
       //! Arguments
       const Arguments* m_args;
+      //! Message handler
+      PacketHandler m_msg_handler;
       //! Mosquitto instance
       mosquitto* m_mosq;
       //! Message queue
@@ -276,9 +245,8 @@ namespace Transports
       void
       connect(void)
       {
-        checkRC(mosquitto_connect(m_mosq, m_args->address.str().c_str(), 
-                                          m_args->port, 
-                                          m_args->keepalive));
+        checkRC(mosquitto_connect(m_mosq, m_args->address.str().c_str(), m_args->port,
+                                  m_args->keepalive));
       }
 
       void
@@ -292,12 +260,27 @@ namespace Transports
         mosquitto_unsubscribe_callback_set(m_mosq, on_unsubscribe);
       }
 
+      void
+      processMessage(const struct mosquitto_message* msg)
+      {
+        if (hasError())
+          return;
+
+        if (msg == nullptr || msg->topic == nullptr || msg->payload == nullptr)
+          return;
+
+        m_task->debug("Received message on topic: %s, payload length: %d", msg->topic,
+                      msg->payloadlen);
+
+        m_msg_handler(msg->topic, (uint8_t*)msg->payload, msg->payloadlen);
+      }
+
       //! Connect callback function
       static void
       on_connect(struct mosquitto* mosq, void* obj, int rc)
       {
-        (void) mosq;
-        MosquittoClient* self = (MosquittoClient*) obj;
+        (void)mosq;
+        MosquittoClient* self = (MosquittoClient*)obj;
 
         self->m_task->inf("Connected to broker");
         self->storeRC(rc);
@@ -320,13 +303,7 @@ namespace Transports
       {
         (void)mosq;
         MosquittoClient* self = (MosquittoClient*)obj;
-
-        mosquitto_message bfr;
-        mosquitto_message_copy(&bfr, msg);
-        self->m_queue.push(bfr);
-        self->m_task->spew(
-          "recv: %s: %s", msg->topic,
-          sanitize(std::string((char*)msg->payload, msg->payloadlen).c_str()).c_str());
+        self->processMessage(msg);
       }
 
       //! Publish callback function
