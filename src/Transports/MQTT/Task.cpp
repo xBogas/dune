@@ -55,12 +55,12 @@ namespace Transports
       std::vector<std::string> messages;
       //! List of topics to subscribe
       std::vector<std::string> topics;
-      //! Basic topic name for MQTT messages
+      //! Basic topic name for IMC messages
       std::string basic_name;
     };
 
     //! Message buffer size.
-    static const int c_bfr_size = 65535;
+    constexpr int c_bfr_size = DUNE_IMC_CONST_MAX_SIZE;
 
     struct Task: public DUNE::Tasks::Task
     {
@@ -141,7 +141,7 @@ namespace Transports
 
         param("Basic Name", m_args.basic_name)
           .defaultValue("IMC")
-          .description("Base topic prefix used for MQTT messages.");
+          .description("Base topic prefix used for IMC messages.");
       }
 
       //! Update internal state with new parameter values.
@@ -183,7 +183,7 @@ namespace Transports
         catch (const std::exception& e)
         {
           m_client = nullptr;
-          throw RestartNeeded(String::str("Unable to start client: %s", e.what()).c_str(), 10);
+          throw RestartNeeded(e.what(), 10);
         }
 
         announceService();
