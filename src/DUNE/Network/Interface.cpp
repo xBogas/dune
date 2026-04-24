@@ -158,7 +158,7 @@ namespace DUNE
     }
 
     bool
-    Interface::hasFeature(Features feature)
+    Interface::hasFeature(Features feature) const
     {
       return (m_features & feature) != 0;
     }

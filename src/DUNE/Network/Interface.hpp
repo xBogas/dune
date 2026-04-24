@@ -76,7 +76,7 @@ namespace DUNE
       //! @return true if the interface supports the given feature,
       //! false otherwise.
       bool
-      hasFeature(Features feature);
+      hasFeature(Features feature) const;
 
       //! Retrieve interface's address.
       //! @return interface's address.
