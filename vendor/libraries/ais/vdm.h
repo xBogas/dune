@@ -63,6 +63,7 @@
 #ifndef LIBAIS_VDM_H_
 #define LIBAIS_VDM_H_
 
+#include <cstdint>
 #include <deque>
 #include <memory>
 #include <string>
