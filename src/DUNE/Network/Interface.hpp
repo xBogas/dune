@@ -86,6 +86,14 @@ namespace DUNE
         return m_addr;
       }
 
+      //! Retrieve interface's netmask.
+      //! @return interface's netmask.
+      const Address&
+      netmask(void) const
+      {
+        return m_netmask;
+      }
+
       //! Retrieve interface's broadcast address.
       //! @return interface's broadcast address.
       const Address&
@@ -101,6 +109,8 @@ namespace DUNE
       Address m_addr;
       //! IPv4 broadcast address.
       Address m_bcast;
+      //! Netmask.
+      Address m_netmask;
       //! Features.
       unsigned m_features;
     };

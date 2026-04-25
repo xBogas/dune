@@ -107,6 +107,7 @@ namespace DUNE
         Interface itf;
         itf.m_name = next->ifa_name;
         itf.m_addr = next->ifa_addr;
+        itf.m_netmask = next->ifa_netmask;
         if (next->ifa_flags & IFF_BROADCAST)
         {
           itf.m_bcast = next->ifa_broadaddr;
