@@ -1,4 +1,20 @@
 <?xml version="1.0"?>
+<!--
+    Basic world for Stonefish simulations.
+
+    Defines only the shared environment (ocean, materials, looks and sea
+    bottom). It contains no robot, so it is meant to be included from a
+    per-vehicle scenario together with a robot template, e.g. lauv.scn:
+
+        <scenario>
+            <include file="basic.scn"/>
+            <include file="lauv.scn">
+                <arg name="name" value="lauv-1"/>
+            </include>
+        </scenario>
+
+    See lauv-1.scn for a ready-to-run example.
+-->
 <scenario>
     <environment>
         <ned latitude="41.1850" longitude="-8.7062"/>
@@ -38,64 +54,4 @@
         <look name="gray"/>
         <world_transform xyz="0.0 0.0 50.0" rpy="0.0 0.0 0.0"/>
     </static>
-
-    <robot name="lauv" fixed="false" self_collisions="false">
-        <base_link name="hull" type="cylinder" ext_physical="false" ext_visual="true">
-            <dimensions radius="0.15" height="1.15"/>
-            <mass value="75.0"/>
-            <!-- TODO: Fix mass + Volume + Buoyancy! -->
-            <volume value="0.0361"/>
-            <cg xyz="0.0 0.0 0.009" rpy="0.0 0.0 0.0"/>
-            <inertia Ixx="1.0" Iyy="34.0" Izz="34.0" Ixy="0.04" Ixz="2.1" Iyz="2.1"/>
-
-            <material name="Hull"/>
-            <origin xyz="0.0 0.0 0.0" rpy="0.0 1.5708 0.0"/>
-            <look name="yellow"/>
-
-            <collision>
-                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
-                <geometry>
-                    <cylinder radius="0.15" length="1.15"/>
-                </geometry>
-                <material name="Neutral"/>
-            </collision>
-
-            <hydrodynamics>
-                <added_mass>
-                    <linear x="1.0" y="16.0" z="16.0" roll="0.0" pitch="0.0" yaw="0.0"/>
-                </added_mass>
-                <damping>
-                    <linear x="2.4" y="23.0" z="23.0" roll="0.3" pitch="9.7" yaw="9.7"/>
-                    <quadratic x="2.4" y="80.0" z="80.0" roll="0.0006" pitch="9.1" yaw="9.1"/>
-                </damping>
-            </hydrodynamics>
-        </base_link>
-
-        <actuator name="thruster_surge" type="thruster">
-            <specs max_setpoint="2000.0" inverted_setpoint="false" normalized_setpoint="false"/>
-            <propeller diameter="0.3" right="true">
-                <mesh filename="propeller.obj" scale="1.0"/>
-                <material name="Neutral"/>
-                <look name="gray"/>
-            </propeller>
-            <rotor_dynamics type="zero_order"/>
-            <thrust_model type="quadratic">
-                <thrust_coeff value="0.05"/>
-            </thrust_model>
-            <origin xyz="-0.605 0.0 0.0" rpy="0.0 0.0 0.0"/>
-            <link name="hull"/>
-        </actuator>
-
-        <sensor name="imu" type="imu" rate="50.0">
-            <link name="hull"/>
-            <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
-        </sensor>
-
-        <sensor name="pressure" type="pressure" rate="10.0">
-            <link name="hull"/>
-            <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
-        </sensor>
-
-        <world_transform xyz="0.0 0.0 0.0" rpy="0.0 1.5708 0.0"/>
-    </robot>
 </scenario>
