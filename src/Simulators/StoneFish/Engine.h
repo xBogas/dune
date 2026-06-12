@@ -48,7 +48,6 @@ namespace Simulators
     public:
       Engine(SimMode mode, const DUNE::FileSystem::Path& scn_fd, double freq, simCallback onStep,
              simCallback onBuild):
-        m_mode(mode),
         m_manager(nullptr),
         m_sim(nullptr)
       {
@@ -60,16 +59,26 @@ namespace Simulators
         {
           case SimMode::CONSOLE:
             m_sim = new ConsoleSim("DUNE sim", data_dir, m_manager);
-
             break;
+
           case SimMode::GRAPHICAL:
-            m_sim = new GraphicalSim("DUNE sim", data_dir, sf::RenderSettings(),
-                                     sf::HelperSettings(), m_manager);
-            break;
+          {
+            sf::RenderSettings r;
+            r.windowW = 1920;
+            r.windowH = 1080;
+            r.verticalSync = true;
 
-          default:
-            break;
+            m_sim = new GraphicalSim("DUNE sim", data_dir, r, sf::HelperSettings(), m_manager);
+          }
+          break;
         }
+      }
+
+      ~Engine(void)
+      {
+        // The simulation app does not own the manager: release both.
+        delete m_sim;
+        delete m_manager;
       }
 
       /// @brief Start the simulation
@@ -91,7 +100,6 @@ namespace Simulators
       }
 
     private:
-      SimMode m_mode;
       SimManager* m_manager;
       SimulatorInterface* m_sim;
     };
