@@ -29,6 +29,16 @@
 
 #include "Vehicle.h"
 
+// DUNE headers.
+#include <DUNE/Streams/Terminal.hpp>
+
+// Stonefish headers.
+#include <Stonefish/actuators/Propeller.h>
+#include <Stonefish/actuators/Push.h>
+#include <Stonefish/actuators/Rudder.h>
+#include <Stonefish/actuators/Servo.h>
+#include <Stonefish/actuators/SimpleThruster.h>
+#include <Stonefish/actuators/Thruster.h>
 #include <Stonefish/entities/SolidEntity.h>
 
 namespace Simulators
@@ -38,66 +48,175 @@ namespace Simulators
     Vehicle::Vehicle(sf::Robot* robot):
       m_robot(robot)
     {
-      load_config();
+      scanActuators();
     }
 
     Vehicle::State
     Vehicle::getState(void) const
     {
-      if (m_robot == nullptr)
-        return State();
+      State state;
 
-      sf::Vector3 position;
-      sf::Scalar roll, pitch, yaw;
-
-      // Get robot transform and extract position + Euler angles
       sf::Transform transform = m_robot->getTransform();
-      position = transform.getOrigin();
-      sf::Matrix3 rotMatrix = transform.getBasis();
-      rotMatrix.getEulerZYX(yaw, pitch, roll);
+      state.position = transform.getOrigin();
+
+      sf::Scalar roll, pitch, yaw;
+      transform.getBasis().getEulerZYX(yaw, pitch, roll);
+      state.orientation = sf::Vector3(roll, pitch, yaw);
 
       sf::SolidEntity* base = m_robot->getBaseLink();
       if (base == nullptr)
-        return State{ position, sf::Vector3(roll, pitch, yaw), sf::Vector3(0, 0, 0),
-                      sf::Vector3(0, 0, 0) };
+      {
+        state.linearVelocity = sf::Vector3(0, 0, 0);
+        state.angularVelocity = sf::Vector3(0, 0, 0);
+        return state;
+      }
 
-      return State{ position, sf::Vector3(roll, pitch, yaw), base->getLinearVelocity(),
-                    base->getAngularVelocity() };
+      // Stonefish reports velocities in the world frame; convert to body frame.
+      sf::Matrix3 worldToBody = transform.getBasis().transpose();
+      state.linearVelocity = worldToBody * base->getLinearVelocity();
+      state.angularVelocity = worldToBody * base->getAngularVelocity();
+      return state;
     }
 
     void
-    Vehicle::load_config(void)
+    Vehicle::setThrust(unsigned index, double value)
     {
-      size_t id = 0;
-      sf::Actuator* act = nullptr;
-      while ((act = m_robot->getActuator(id)) != nullptr)
+      if (index >= m_thrusters.size())
       {
-        DUNE_MSG("Vehicle loader", "Found actuator : " << act->getName());
+        DUNE_WRN("Vehicle", "no thruster with id " << index);
+        return;
+      }
 
-        switch (act->getType())
+      std::lock_guard<std::mutex> lock(m_mutex);
+      m_pending_thrust[index] = value;
+    }
+
+    void
+    Vehicle::setServo(unsigned index, double value)
+    {
+      if (index >= m_servos.size())
+      {
+        DUNE_WRN("Vehicle", "no servo with id " << index);
+        return;
+      }
+
+      std::lock_guard<std::mutex> lock(m_mutex);
+      m_pending_servo[index] = value;
+    }
+
+    void
+    Vehicle::applySetpoints(void)
+    {
+      std::map<unsigned, double> thrust;
+      std::map<unsigned, double> servo;
+
+      {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        thrust.swap(m_pending_thrust);
+        servo.swap(m_pending_servo);
+      }
+
+      for (const auto& setpoint : thrust)
+        applyThrust(m_thrusters[setpoint.first], setpoint.second);
+
+      for (const auto& setpoint : servo)
+        applyServo(m_servos[setpoint.first], setpoint.second);
+    }
+
+    bool
+    Vehicle::getThrusterRpm(size_t index, double& rpm) const
+    {
+      sf::Actuator* actuator = m_thrusters[index];
+      sf::Scalar omega;
+
+      switch (actuator->getType())
+      {
+        case sf::ActuatorType::THRUSTER:
+          omega = static_cast<sf::Thruster*>(actuator)->getOmega();
+          break;
+        case sf::ActuatorType::PROPELLER:
+          omega = static_cast<sf::Propeller*>(actuator)->getOmega();
+          break;
+        default:
+          // Simple thrusters and pushers have no rotor model.
+          return false;
+      }
+
+      rpm = omega * 60.0 / (2.0 * M_PI);
+      return true;
+    }
+
+    double
+    Vehicle::getServoPosition(size_t index) const
+    {
+      sf::Actuator* actuator = m_servos[index];
+      if (actuator->getType() == sf::ActuatorType::RUDDER)
+        return static_cast<sf::Rudder*>(actuator)->getAngle();
+
+      return static_cast<sf::Servo*>(actuator)->getPosition();
+    }
+
+    void
+    Vehicle::scanActuators(void)
+    {
+      sf::Actuator* actuator;
+      for (size_t i = 0; (actuator = m_robot->getActuator(i)) != nullptr; i++)
+      {
+        switch (actuator->getType())
         {
           case sf::ActuatorType::THRUSTER:
-            newThruster(act);
-            break;
-          case sf::ActuatorType::SERVO:
-            newServo(act);
-            break;
-
-          case sf::ActuatorType::MOTOR:
-            newMotor(act);
-            break;
-
           case sf::ActuatorType::PROPELLER:
-            newPropeller(act);
+          case sf::ActuatorType::SIMPLE_THRUSTER:
+          case sf::ActuatorType::PUSH:
+            DUNE_MSG("Vehicle", "thruster " << m_thrusters.size() << ": " << actuator->getName());
+            m_thrusters.push_back(actuator);
+            break;
+
+          case sf::ActuatorType::SERVO:
+          case sf::ActuatorType::RUDDER:
+            DUNE_MSG("Vehicle", "servo " << m_servos.size() << ": " << actuator->getName());
+            m_servos.push_back(actuator);
             break;
 
           default:
+            DUNE_WRN("Vehicle", "unsupported actuator: " << actuator->getName());
             break;
         }
-
-        id++;
       }
     }
 
+    void
+    Vehicle::applyThrust(sf::Actuator* actuator, double value)
+    {
+      switch (actuator->getType())
+      {
+        case sf::ActuatorType::THRUSTER:
+          static_cast<sf::Thruster*>(actuator)->setSetpoint(value);
+          break;
+        case sf::ActuatorType::PROPELLER:
+          static_cast<sf::Propeller*>(actuator)->setSetpoint(value);
+          break;
+        case sf::ActuatorType::SIMPLE_THRUSTER:
+          static_cast<sf::SimpleThruster*>(actuator)->setSetpoint(value, 0);
+          break;
+        case sf::ActuatorType::PUSH:
+          static_cast<sf::Push*>(actuator)->setForce(value);
+          break;
+        default:
+          break;
+      }
+    }
+
+    void
+    Vehicle::applyServo(sf::Actuator* actuator, double value)
+    {
+      if (actuator->getType() == sf::ActuatorType::RUDDER)
+      {
+        static_cast<sf::Rudder*>(actuator)->setSetpoint(value);
+        return;
+      }
+
+      static_cast<sf::Servo*>(actuator)->setDesiredPosition(value);
+    }
   }
 }

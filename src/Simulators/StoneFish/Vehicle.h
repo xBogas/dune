@@ -27,79 +27,143 @@
 // Author: João Bogas                                                       *
 //***************************************************************************
 
-#include <Stonefish/actuators/Motor.h>
-#include <Stonefish/actuators/Propeller.h>
-#include <Stonefish/actuators/Servo.h>
-#include <Stonefish/actuators/Thruster.h>
-#include <Stonefish/core/Robot.h>
-#include <Stonefish/sensors/Sensor.h>
+#ifndef SIMULATORS_STONEFISH_VEHICLE_H
+#define SIMULATORS_STONEFISH_VEHICLE_H
 
-#include <DUNE/Streams/Terminal.hpp>
+// C++ headers.
+#include <map>
+#include <mutex>
+#include <string>
+#include <vector>
+
+// Stonefish headers.
+#include <Stonefish/actuators/Actuator.h>
+#include <Stonefish/core/Robot.h>
 
 namespace Simulators
 {
   namespace StoneFish
   {
-
+    //! Wrapper around a Stonefish robot.
+    //!
+    //! Exposes the dynamic state of the robot and a thread-safe interface
+    //! to command its actuators. Setpoints arrive from the DUNE task
+    //! thread (message consumers) and are queued; applySetpoints() hands
+    //! them to the simulation and must be called from the simulation
+    //! thread, between physics steps.
+    //!
+    //! Actuators are grouped in two banks, indexed by order of appearance
+    //! in the scenario file:
+    //! - thrust bank: thruster, propeller, simple thruster and push;
+    //! - servo bank: servo and rudder.
     class Vehicle
     {
     public:
+      //! Dynamic state of the robot.
       struct State
       {
+        //! Position in the world NED frame [m].
         sf::Vector3 position;
+        //! Euler angles: roll, pitch, yaw [rad].
         sf::Vector3 orientation;
+        //! Body-fixed linear velocity [m/s].
         sf::Vector3 linearVelocity;
+        //! Body-fixed angular velocity [rad/s].
         sf::Vector3 angularVelocity;
       };
 
-      Vehicle(sf::Robot* robot);
+      //! Constructor.
+      //! @param[in] robot robot created by the simulation, must outlive this object.
+      explicit Vehicle(sf::Robot* robot);
 
+      //! Robot name as defined in the scenario file.
+      std::string
+      getName(void) const
+      {
+        return m_robot->getName();
+      }
+
+      //! Current dynamic state of the robot.
       State
       getState(void) const;
 
+      //! Queue a setpoint for an actuator of the thrust bank (any thread).
+      //! Thrusters and propellers take values in [-1, 1] (scenario must use
+      //! normalized setpoints); simple thrusters and pushers take force [N].
+      //! @param[in] index actuator index within the thrust bank.
+      //! @param[in] value setpoint.
+      void
+      setThrust(unsigned index, double value);
+
+      //! Queue a position setpoint for an actuator of the servo bank (any thread).
+      //! @param[in] index actuator index within the servo bank.
+      //! @param[in] value desired position [rad].
+      void
+      setServo(unsigned index, double value);
+
+      //! Apply all queued setpoints (simulation thread only).
+      void
+      applySetpoints(void);
+
+      //! Number of actuators in the thrust bank.
+      size_t
+      getThrusterCount(void) const
+      {
+        return m_thrusters.size();
+      }
+
+      //! Name of a thrust bank actuator.
+      std::string
+      getThrusterName(size_t index) const
+      {
+        return m_thrusters[index]->getName();
+      }
+
+      //! Rotational speed of a thrust bank actuator.
+      //! @param[in] index actuator index within the thrust bank.
+      //! @param[out] rpm rotational speed [rpm].
+      //! @return true if the actuator measures rotational speed.
+      bool
+      getThrusterRpm(size_t index, double& rpm) const;
+
+      //! Number of actuators in the servo bank.
+      size_t
+      getServoCount(void) const
+      {
+        return m_servos.size();
+      }
+
+      //! Current position of a servo bank actuator [rad].
+      double
+      getServoPosition(size_t index) const;
+
     private:
+      //! Sort robot actuators into the thrust and servo banks.
       void
-      load_config(void);
+      scanActuators(void);
 
+      //! Hand a thrust setpoint to the simulation (simulation thread only).
       void
-      newThruster(sf::Actuator* thruster)
-      {
-        m_thrusters.push_back(static_cast<sf::Thruster*>(thruster));
-      }
+      applyThrust(sf::Actuator* actuator, double value);
 
+      //! Hand a servo setpoint to the simulation (simulation thread only).
       void
-      newServo(sf::Actuator* servo)
-      {
-        m_servos.push_back(static_cast<sf::Servo*>(servo));
-      }
+      applyServo(sf::Actuator* actuator, double value);
 
-      void
-      newSensor(sf::Sensor* sensor)
-      {
-        m_sensors.push_back(sensor);
-      }
-
-      void
-      newMotor(sf::Actuator* motor)
-      {
-        m_motors.push_back(static_cast<sf::Motor*>(motor));
-      }
-
-      void
-      newPropeller(sf::Actuator* propeller)
-      {
-        m_propellers.push_back(static_cast<sf::Propeller*>(propeller));
-      }
-
+      //! Simulated robot.
       sf::Robot* m_robot;
-
-      // TODO: Add relevant actuators
-
-      std::vector<sf::Thruster*> m_thrusters;
-      std::vector<sf::Motor*> m_motors;
-      std::vector<sf::Propeller*> m_propellers;
-      std::vector<sf::Servo*> m_servos;
-      std::vector<sf::Sensor*> m_sensors;
+      //! Thrust bank: thrusters, propellers, simple thrusters and pushers.
+      std::vector<sf::Actuator*> m_thrusters;
+      //! Servo bank: servos and rudders.
+      std::vector<sf::Actuator*> m_servos;
+      //! Queued thrust setpoints, by thrust bank index.
+      std::map<unsigned, double> m_pending_thrust;
+      //! Queued servo setpoints, by servo bank index.
+      std::map<unsigned, double> m_pending_servo;
+      //! Guards the queued setpoints.
+      std::mutex m_mutex;
     };
   }
 }
+
+#endif  // SIMULATORS_STONEFISH_VEHICLE_H
