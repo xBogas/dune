@@ -235,8 +235,7 @@ namespace Simulators
     SensorBridge::translateCompass(const std::string& dev_name, const sf::Sample& sample)
     {
       IMC::EulerAngles msg;
-      msg.psi = sample.getValue(0);
-      msg.psi_magnetic = msg.psi;
+      msg.psi_magnetic = sample.getValue(0);
       dispatch(msg, dev_name);
     }
 
