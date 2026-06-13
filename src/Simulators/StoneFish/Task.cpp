@@ -27,50 +27,78 @@
 // Author: João Bogas                                                       *
 //***************************************************************************
 
-// C++ headers.
-#include <csignal>
-#include <unistd.h>
-
 // DUNE headers.
 #include <DUNE/DUNE.hpp>
 
-#ifndef BT_USE_DOUBLE_PRECISION
-#define BT_USE_DOUBLE_PRECISION 1
-#endif
-
+// Local headers.
 #include "Engine.h"
-#include "Factory.h"
+#include "Scenario.h"
+#include "Sensors.h"
+#include "Vehicle.h"
+
+// Stonefish headers.
+#include <Stonefish/core/NED.h>
+#include <Stonefish/entities/forcefields/Ocean.h>
 
 namespace Simulators
 {
-  //! Insert short task description here.
+  //! Interface with the Stonefish simulation engine.
   //!
-  //! Insert explanation on task behaviour here.
+  //! Runs a Stonefish simulation, with or without graphical interface,
+  //! from a scenario file. The robot defined in the scenario replaces the
+  //! real vehicle: its simulated sensors are translated into the
+  //! corresponding IMC messages (see SensorBridge for the full mapping)
+  //! and thruster/servo commands are injected into the simulation.
+  //!
+  //! The task dispatches:
+  //! - SimulatedState with the ground truth state of the robot;
+  //! - one IMC message stream per sensor of the scenario, each from an
+  //!   entity labelled with the sensor name (e.g. "lauv/imu");
+  //! - Rpm and ServoPosition as actuator feedback.
+  //!
+  //! And consumes:
+  //! - SetThrusterActuation, indexing thrusters, propellers and pushers
+  //!   by order of declaration in the scenario;
+  //! - SetServoPosition, indexing servos and rudders likewise.
+  //!
   //! @author João Bogas
   namespace StoneFish
   {
     using DUNE_NAMESPACES;
 
-    struct Parameters
+    //! %Task arguments.
+    struct Arguments
     {
       //! Scenario file path.
       std::string scenario;
-      //! Initial position (latitude, longitude, depth).
-      std::vector<double> position;
+      //! Name of the robot to control.
+      std::string robot;
       //! Enable graphical interface.
-      bool enable_graphics;
+      bool graphics;
+      //! Simulation frequency.
+      double frequency;
+      //! Actuator feedback frequency.
+      double feedback_frequency;
     };
 
     struct Task: public DUNE::Tasks::Task
     {
-      //! Path to the scenario file to be loaded in the simulation.
+      //! Resolved path to the scenario file.
       Path m_scenario;
-      //! Simulation engine instance.
+      //! Simulation engine.
       Engine* m_engine;
-      //! Robot instance.
-      VehiclePtr m_robot;
-      //! Task parameters.
-      Parameters m_args;
+      //! Controlled robot, valid once the scenario is built.
+      std::shared_ptr<Vehicle> m_vehicle;
+      //! Device name (lauv/imu) to system and entity ids.
+      DeviceMap m_eids;
+      //! Translates Stonefish sensors into IMC messages.
+      SensorBridge m_bridge;
+      //! Ground truth state, with origin set when the scenario is built.
+      IMC::SimulatedState m_sstate;
+      //! Actuator feedback timer.
+      Time::Counter<double> m_feedback_timer;
+      //! Task arguments.
+      Arguments m_args;
 
       //! Constructor.
       //! @param[in] name task name.
@@ -78,27 +106,36 @@ namespace Simulators
       Task(const std::string& name, Tasks::Context& ctx):
         DUNE::Tasks::Task(name, ctx),
         m_engine(nullptr),
-        m_robot(nullptr)
+        m_bridge(this)
       {
         param("Scenario Path", m_args.scenario)
           .description("Relative path from the configuration directory to the scenario file to be "
                        "loaded in the simulation.");
 
-        param("Initial Position", m_args.position)
-          .defaultValue("0, 0, 0")
-          .description("Initial position of the robot. (latitude, longitude, depth)");
-
-        param("Enable Graphics", m_args.enable_graphics)
+        param("Enable Graphics", m_args.graphics)
           .defaultValue("true")
           .description("Enable graphical interface for the simulator.");
 
+        param("Simulation Frequency", m_args.frequency)
+          .defaultValue("100.0")
+          .units(Units::Hertz)
+          .description("Physics steps per second of simulated time.");
+
+        param("Feedback Frequency", m_args.feedback_frequency)
+          .defaultValue("10.0")
+          .units(Units::Hertz)
+          .description("Frequency of actuator feedback (Rpm and ServoPosition).");
+
         bind<IMC::SetThrusterActuation>(this);
+        bind<IMC::SetServoPosition>(this);
       }
 
       //! Update internal state with new parameter values.
       void
       onUpdateParameters(void)
       {
+        m_feedback_timer.setTop(1.0 / m_args.feedback_frequency);
+
         m_scenario = m_ctx.dir_cfg / m_args.scenario;
         if (m_scenario.exists())
           return;
@@ -110,25 +147,49 @@ namespace Simulators
         throw RestartNeeded("Invalid parameter 'Scenario Path': " + m_args.scenario, 5);
       }
 
-      //! Reserve entity identifiers.
+      //! Reserve one entity per device declared in the scenario, so that
+      //! each sensor and actuator dispatches from its own entity.
       void
       onEntityReservation(void)
-      { }
+      {
+        std::vector<Scenario::Device> devices;
 
-      //! Resolve entity names.
-      void
-      onEntityResolution(void)
-      { }
+        try
+        {
+          devices = Scenario::scan(m_scenario.str());
+        }
+        catch (const std::exception& e)
+        {
+          war("scenario scan failed, sensors will use the task entity: %s", e.what());
+          return;
+        }
 
-      //! Acquire resources.
-      void
-      onResourceAcquisition(void)
-      { }
+        for (const Scenario::Device& device : devices)
+        {
+          // TODO: If device robot name != run as distributed simulation system
+          // (should have an EntityList of simulated vehicle)
 
-      //! Initialize resources.
-      void
-      onResourceInitialization(void)
-      { }
+          try
+          {
+            Entities::StatefulEntity* entity = reserveEntity<Entities::StatefulEntity>(device.name);
+            m_eids[device.fullName()] = { getSystemId() /* resolveSystemName(device.robot) */,
+                                          entity->getId() };
+
+            // TODO: Simulate state when dispatching data from device
+            //? Add option to disable data device -> stop dispatching data -> state go idle
+            // TODO: Dispatch date depending on device state (service, maneuver)
+            entity->setState(IMC::EntityState::ESTA_BOOT, Status::CODE_INIT);
+            entity->setState(IMC::EntityState::ESTA_NORMAL, Status::CODE_ACTIVE);
+
+            war("reserved system (%s) entity '%s' (%s)", device.robot.c_str(), device.name.c_str(),
+                device.type.c_str());
+          }
+          catch (const std::exception& e)
+          {
+            war("failed to reserve entity '%s': %s", device.name.c_str(), e.what());
+          }
+        }
+      }
 
       //! Release resources.
       void
@@ -142,92 +203,176 @@ namespace Simulators
       {
         Thread::stopImpl();
 
-        if (m_engine == nullptr)
-          return;
-
-        m_engine->exit();
+        if (m_engine != nullptr)
+          m_engine->exit();
       }
 
       void
       consume(const IMC::SetThrusterActuation* msg)
       {
-        if (m_robot == nullptr)
-          return;
-
-        // m_robot->setThrusterActuation(msg->id, msg->getValueFP());
+        if (m_vehicle != nullptr)
+          m_vehicle->setThrust(msg->id, msg->value);
       }
 
       void
-      dispatchState(sf::SimulationManager& simManager)
+      consume(const IMC::SetServoPosition* msg)
       {
-        if (m_robot == nullptr)
-        {
-          err("Robot not found in the simulation.");
-          exit(1);
-          return;
-        }
-
-        // Get robot transform and extract position + Euler angles
-        Vehicle::State pose = m_robot->getState();
-        // TODO: As it diverges from the initial position update the lat,lon reference frame
-        IMC::SimulatedState sstate;
-
-        // Update position
-        sstate.lat = m_args.position[0];
-        sstate.lon = m_args.position[1];
-        sstate.height = m_args.position[2];
-
-        sstate.x = pose.position.x();
-        sstate.y = pose.position.y();
-        sstate.z = pose.position.z();
-
-        // Euler angles (in radians)
-        sstate.phi = pose.orientation.x();     // Roll
-        sstate.theta = pose.orientation.y();  // Pitch
-        sstate.psi = pose.orientation.z();      // Yaw
-
-        // Velocities
-        sstate.u = 0.0;  // Body-Fixed xx Linear Velocity
-        sstate.v = 0.0;  // Body-Fixed yy Linear Velocity
-        sstate.w = 0.0;  // Body-Fixed zz Linear Velocity
-
-        // Angular velocities
-        sstate.p = 0.0;  // Angular Velocity in x
-        sstate.q = 0.0;  // Angular Velocity in y
-        sstate.r = 0.0;  // Angular Velocity in z
-
-        dispatch(sstate);
+        if (m_vehicle != nullptr)
+          m_vehicle->setServo(msg->id, msg->value);
       }
 
+      //! Resolve device name (robot/sensor) to reserved entity id,
+      //! or return the task entity if not found.
+      DeviceInfo
+      resolveDevice(const std::string& dev_name)
+      {
+        DeviceMap::const_iterator itr = m_eids.find(dev_name);
+        if (itr != m_eids.end())
+          return itr->second;
+
+        DeviceInfo info = { getSystemId(), getEntityId() };
+        m_eids[dev_name] = info;
+        return info;
+      }
+
+      //! Collect the resources of the built scenario: the robot to
+      //! control, the sensors to translate and the geodetic origin.
+      //! Runs in the simulation thread, once, before the first step.
       void
-      getSimResources(sf::SimulationManager& simManager)
+      onBuild(sf::SimulationManager& sim)
       {
-        std::vector<VehiclePtr> vecs = Factory::createVehicles(&simManager);
-        if (vecs.empty())
+        sf::Robot* robot = nullptr;
+        robot = sim.getRobot(getSystemName());
+        if (robot == nullptr)
         {
-          err("No vehicles found in the simulation.");
-          exit(1);
-          return;
+          war("robot '%s' not found in scenario, using the first one", getSystemName());
+          robot = sim.getRobot(0u);
         }
 
-        // Get robot instance
-        // TODO: Add support for multiple vehicles and select the one to be used based on configuration
-        m_robot = vecs[0];
+        if (robot != nullptr)
+        {
+          m_vehicle = std::make_shared<Vehicle>(robot);
+          inf("controlling robot '%s'", m_vehicle->getName().c_str());
+        }
+        else
+        {
+          war("scenario has no robot, only sensors will be dispatched");
+        }
+
+        // The scenario NED origin is the geodetic reference of all
+        // positions dispatched by this task.
+        sf::Scalar lat, lon, height;
+        sim.getNED()->Ned2Geodetic(0, 0, 0, lat, lon, height);
+        m_sstate.lat = Angles::radians(lat);
+        m_sstate.lon = Angles::radians(lon);
+        m_sstate.height = height;
+
+        m_bridge.bind(sim, m_eids);
+        setEntityState(IMC::EntityState::ESTA_NORMAL, Status::CODE_ACTIVE);
       }
 
+      //! Exchange data with the simulation: apply pending actuator
+      //! setpoints and dispatch the new state of the world.
+      //! Runs in the simulation thread, after every physics step.
+      void
+      onStep(sf::SimulationManager& sim)
+      {
+        // The task thread is blocked running the simulation, so incoming
+        // messages are consumed here, in the simulation thread.
+        consumeMessages();
+
+        m_bridge.poll();
+
+        if (m_vehicle == nullptr)
+          return;
+
+        m_vehicle->applySetpoints();
+        dispatchState(sim);
+
+        if (m_feedback_timer.overflow())
+        {
+          m_feedback_timer.reset();
+          dispatchFeedback();
+        }
+      }
+
+      //! Dispatch the ground truth state of the robot.
+      void
+      dispatchState(sf::SimulationManager& sim)
+      {
+        const Vehicle::State state = m_vehicle->getState();
+
+        m_sstate.x = state.position.x();
+        m_sstate.y = state.position.y();
+        m_sstate.z = state.position.z();
+
+        m_sstate.phi = Angles::normalizeRadian(state.orientation.x());
+        m_sstate.theta = Angles::normalizeRadian(state.orientation.y());
+        m_sstate.psi = Angles::normalizeRadian(state.orientation.z());
+
+        m_sstate.u = state.linearVelocity.x();
+        m_sstate.v = state.linearVelocity.y();
+        m_sstate.w = state.linearVelocity.z();
+
+        m_sstate.p = state.angularVelocity.x();
+        m_sstate.q = state.angularVelocity.y();
+        m_sstate.r = state.angularVelocity.z();
+
+        sf::Ocean* ocean = sim.getOcean();
+        if (ocean != nullptr)
+        {
+          const sf::Vector3 stream = ocean->GetFluidVelocity(state.position);
+          m_sstate.svx = stream.x();
+          m_sstate.svy = stream.y();
+          m_sstate.svz = stream.z();
+        }
+
+        dispatch(m_sstate);
+      }
+
+      //! Dispatch actuator feedback: Rpm for each rotating thrust
+      //! actuator and ServoPosition for each servo.
+      void
+      dispatchFeedback(void)
+      {
+        for (size_t i = 0; i < m_vehicle->getThrusterCount(); i++)
+        {
+          double rpm;
+          if (!m_vehicle->getThrusterRpm(i, rpm))
+            continue;
+
+          IMC::Rpm msg;
+          msg.value = (int16_t)std::lround(rpm);
+
+          DeviceInfo info = resolveDevice(m_vehicle->getThrusterName(i));
+          msg.setSource(info.system_id);
+          msg.setSourceEntity(info.entity_id);
+          dispatch(msg, Tasks::DF_KEEP_SRC_EID);
+        }
+
+        for (size_t i = 0; i < m_vehicle->getServoCount(); i++)
+        {
+          IMC::ServoPosition msg;
+          msg.id = i;
+          msg.value = m_vehicle->getServoPosition(i);
+          dispatch(msg);
+        }
+      }
+
+      //! Run the simulation until it terminates. Stonefish steps the
+      //! physics in a dedicated thread and this thread runs the console
+      //! or rendering loop, so this call only returns on shutdown.
       void
       runSim(void)
       {
-        double hz = 100.0;
+        inf("using scenario file: %s", m_scenario.c_str());
+        inf("graphics %s", m_args.graphics ? "enabled" : "disabled");
 
-        inf("Using scenario file: %s", m_scenario.c_str());
-        inf("Graphics %s", m_args.enable_graphics ? "enabled" : "disabled");
+        SimMode mode = m_args.graphics ? SimMode::GRAPHICAL : SimMode::CONSOLE;
+        simCallback onStepCb = std::bind(&Task::onStep, this, std::placeholders::_1);
+        simCallback onBuildCb = std::bind(&Task::onBuild, this, std::placeholders::_1);
 
-        SimMode mode = m_args.enable_graphics ? SimMode::GRAPHICAL : SimMode::CONSOLE;
-
-        simCallback onStep = std::bind(&Task::dispatchState, this, std::placeholders::_1);
-        simCallback onBuild = std::bind(&Task::getSimResources, this, std::placeholders::_1);
-        m_engine = new Engine(mode, m_scenario, hz, onStep, onBuild);
+        m_engine = new Engine(mode, m_scenario, m_args.frequency, onStepCb, onBuildCb);
         m_engine->start();
       }
 
@@ -241,11 +386,11 @@ namespace Simulators
         }
         catch (const std::exception& e)
         {
-          err("Exception in main loop: %s", e.what());
-          exit(1);
+          throw RestartNeeded(e.what(), 10);
         }
 
-        stop();
+        if (!stopping())
+          throw RestartNeeded("simulation terminated", 10);
       }
     };
   }
