@@ -2,66 +2,214 @@
 <!--
     LAUV robot template.
 
-    Include this together with a world (e.g. basic.scn) and give the robot a
-    unique name through the 'name' argument:
+    Include this together with a world (e.g. basic.scn) and pass ALL of the
+    arguments below (Stonefish has no argument defaults; a missing one is a
+    hard parse error):
 
         <scenario>
             <include file="basic.scn"/>
             <include file="lauv.scn">
                 <arg name="name" value="lauv-1"/>
+                <arg name="mass" value="33.0"/>
+                <arg name="cg_x" value="0.0795"/>
+                <arg name="cg_y" value="0.0"/>
+                <arg name="cg_z" value="0.009"/>
             </include>
         </scenario>
 
-    The DUNE Simulators.StoneFish task controlling this robot must set
-    'Robot Name' to the same value passed here.
+    name   robot name; must match the DUNE system name ([General] Vehicle
+           in the .ini) of the node running Simulators.StoneFish, otherwise
+           the task falls back to the first robot in the scenario.
+    mass   hull dry mass [kg]; displaced volume is 0.0326 m^3 (33.4 kg of
+           water), so < 33.4 floats and > 33.4 sinks.
+    cg_x/y/z  hull centre of gravity [m] in the hull frame (X fwd, Y stbd,
+           Z down). The centre of buoyancy is NOT settable: Stonefish puts
+           it at the volume centroid of lauv_hull_phy.obj (x = +0.082).
+           Submerged pitch trim = atan((cg_x_combined - cb_x) / BG), so trim
+           is millimetre-sensitive in cg_x. Use etc/sim/lauv_trim.py to
+           compute/balance these values (see etc/sim/README.md).
+
+    Geometry generated from lauv.STL (millimeters), converted to meters and
+    centered: X forward, Y starboard, Z down. Hull is ~1.93 m long with a
+    0.074 m radius. Meshes:
+      - lauv_hull.obj      detailed visual (fins and propeller removed)
+      - lauv_hull_phy.obj  low-poly solid of revolution for physics
+      - lauv_fin_*.obj     tail fins, modeled about their pivot point
+
+    Tail has 4 fins in a '+' layout plus one thruster. Servo order (and
+    therefore DUNE SetServoPosition ids, assigned in document order):
+      0: top (0°)  1: starboard (90°)  2: bottom (180°)  3: port (270°)
+    Vertical fins rotate about Z (yaw/rudder), horizontal fins about
+    Y (pitch/elevator). All fins pivot at X = -0.7077 m.
 -->
 <scenario>
     <robot name="$(arg name)" fixed="false" self_collisions="false">
-        <base_link name="hull" type="cylinder" ext_physical="false" ext_visual="true">
-            <dimensions radius="0.15" height="1.15"/>
-            <mass value="75.0"/>
-            <!-- TODO: Fix mass + Volume + Buoyancy! -->
-            <volume value="0.0361"/>
-            <cg xyz="0.0 0.0 0.009" rpy="0.0 0.0 0.0"/>
-            <inertia Ixx="1.0" Iyy="34.0" Izz="34.0" Ixy="0.04" Ixz="2.1" Iyz="2.1"/>
-
-            <material name="Hull"/>
-            <origin xyz="0.0 0.0 0.0" rpy="0.0 1.5708 0.0"/>
-            <look name="yellow"/>
-
-            <collision>
+        <base_link name="hull" type="model" physics="submerged">
+            <physical>
+                <mesh filename="lauv_hull_phy.obj" scale="1.0"/>
                 <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
-                <geometry>
-                    <cylinder radius="0.15" length="1.15"/>
-                </geometry>
-                <material name="Neutral"/>
-            </collision>
-
-            <hydrodynamics>
-                <added_mass>
-                    <linear x="1.0" y="16.0" z="16.0" roll="0.0" pitch="0.0" yaw="0.0"/>
-                </added_mass>
-                <damping>
-                    <linear x="2.4" y="23.0" z="23.0" roll="0.3" pitch="9.7" yaw="9.7"/>
-                    <quadratic x="2.4" y="80.0" z="80.0" roll="0.0006" pitch="9.1" yaw="9.1"/>
-                </damping>
-            </hydrodynamics>
+            </physical>
+            <visual>
+                <mesh filename="lauv_hull.obj" scale="1.0"/>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+            </visual>
+            <material name="Hull"/>
+            <look name="yellow"/>
+            <!-- Mass and CG come from include arguments (see header).
+                 The CG must sit (nearly) under the mesh volume centroid
+                 (= CB, x = +0.082) or the vehicle pitches until CB is
+                 above CG. Tune with etc/sim/lauv_trim.py. -->
+            <mass value="$(arg mass)"/>
+            <inertia xyz="0.5 10.0 10.0"/>
+            <cg xyz="$(arg cg_x) $(arg cg_y) $(arg cg_z)" rpy="0.0 0.0 0.0"/>
         </base_link>
+
+        <!-- Tail fins ('+' layout). Mesh coordinates are relative to the
+             pivot, so each link frame sits on the joint axis. -->
+        <link name="fin_top" type="model" physics="submerged">
+            <physical>
+                <mesh filename="lauv_fin_top.obj" scale="1.0"/>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+            </physical>
+            <material name="Hull"/>
+            <look name="yellow"/>
+        </link>
+
+        <link name="fin_starboard" type="model" physics="submerged">
+            <physical>
+                <mesh filename="lauv_fin_starboard.obj" scale="1.0"/>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+            </physical>
+            <material name="Hull"/>
+            <look name="yellow"/>
+        </link>
+
+        <link name="fin_bottom" type="model" physics="submerged">
+            <physical>
+                <mesh filename="lauv_fin_bottom.obj" scale="1.0"/>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+            </physical>
+            <material name="Hull"/>
+            <look name="yellow"/>
+        </link>
+
+        <link name="fin_port" type="model" physics="submerged">
+            <physical>
+                <mesh filename="lauv_fin_port.obj" scale="1.0"/>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+            </physical>
+            <material name="Hull"/>
+            <look name="yellow"/>
+        </link>
+
+        <joint name="fin_top_joint" type="revolute">
+            <parent name="hull"/>
+            <child name="fin_top"/>
+            <origin xyz="-0.7077 0.0 0.0" rpy="0.0 0.0 0.0"/>
+            <axis xyz="0.0 0.0 1.0"/>
+            <limits min="-0.7854" max="0.7854"/>
+        </joint>
+
+        <joint name="fin_starboard_joint" type="revolute">
+            <parent name="hull"/>
+            <child name="fin_starboard"/>
+            <origin xyz="-0.7077 0.0 0.0" rpy="0.0 0.0 0.0"/>
+            <axis xyz="0.0 1.0 0.0"/>
+            <limits min="-0.7854" max="0.7854"/>
+        </joint>
+
+        <joint name="fin_bottom_joint" type="revolute">
+            <parent name="hull"/>
+            <child name="fin_bottom"/>
+            <origin xyz="-0.7077 0.0 0.0" rpy="0.0 0.0 0.0"/>
+            <axis xyz="0.0 0.0 1.0"/>
+            <limits min="-0.7854" max="0.7854"/>
+        </joint>
+
+        <joint name="fin_port_joint" type="revolute">
+            <parent name="hull"/>
+            <child name="fin_port"/>
+            <origin xyz="-0.7077 0.0 0.0" rpy="0.0 0.0 0.0"/>
+            <axis xyz="0.0 1.0 0.0"/>
+            <limits min="-0.7854" max="0.7854"/>
+        </joint>
 
         <!-- Setpoints from DUNE (SetThrusterActuation) are normalized [-1, 1]. -->
         <actuator name="thruster_surge" type="thruster">
-            <specs max_setpoint="104.7" inverted_setpoint="false" normalized_setpoint="true"/>
-            <propeller diameter="0.3" right="true">
+            <!-- max_setpoint is the propeller speed [rad/s] at full action 1.0
+                 (zero_order rotor: omega = setpoint). rpm = omega*30/pi, so
+                 125.66 rad/s = 1200 rpm (104.7 = 1000 rpm). -->
+            <specs max_setpoint="125.66" inverted_setpoint="false" normalized_setpoint="true"/>
+            <propeller diameter="0.113" right="true">
                 <mesh filename="propeller.obj" scale="1.0"/>
-                <material name="Neutral"/>
+                <material name="Aluminum"/>
                 <look name="gray"/>
             </propeller>
             <rotor_dynamics type="zero_order"/>
+            <!-- Quadratic model is T = kt * omega * |omega| with omega in
+                 rad/s. kt (thrust_coeff) is the ONLY force knob here; the
+                 propeller diameter, the fluid density and the propeller mesh
+                 are all ignored by this model (mesh is visual only). Full
+                 setpoint gives omega = max_setpoint = 125.66, so bollard thrust
+                 is T_max = kt * 125.66^2 = kt * 15791. kt = 0.0026 -> ~41 N.
+                 (At the previous max_setpoint = 104.7 / 1000 rpm, kt = 0.0026
+                 gave ~28 N and settled at ~1.76 m/s steady-state surge, runtime
+                 measured; raising the rpm raises thrust by max_setpoint^2.)
+
+                 TODO: parameterize the thruster against a real LAUV thruster.
+                 - To match a real thruster's rated/bollard thrust, set
+                     kt = T_rated / max_setpoint^2  (e.g. 28 N -> kt = 0.00255).
+                 - Do NOT recalibrate by kt_new = kt*(v_target/v_obs)^2: that
+                   assumes v ~ sqrt(kt) (pure quadratic drag). Stonefish drag is
+                   mesh-integrated (quadratic form term + linear skin-friction
+                   term, both attitude-dependent), so the square law overshoots
+                   the target. If a speed target is required, tune kt
+                   empirically (run, measure SimulatedState.u, bisect).
+                 - For a physically faithful comparison, switch to
+                   <thrust_model type="fluid_dynamics"> and supply the propeller
+                   open-water coefficients K_T (forward/reverse) and K_Q. That
+                   model uses the real diameter, density and advance ratio
+                   J = u/(n*D), so thrust falls off with vehicle speed like a
+                   real propeller. -->
             <thrust_model type="quadratic">
-                <thrust_coeff value="0.05"/>
+                <thrust_coeff value="0.00177"/>
             </thrust_model>
-            <origin xyz="-0.605 0.0 0.0" rpy="0.0 0.0 0.0"/>
+            <!-- Propeller mesh (propeller.obj) is extracted from lauv.STL and
+                 recentered on its rotation axis, so this origin is the real
+                 propeller blade/thrust centre in the hull frame. The mesh
+                 carries the shaft forward (local x +0.153, world x -0.782) so
+                 it meets the hull tail cone; the blades trail aft to x -0.966. -->
+            <origin xyz="-0.9348 0.0 0.0" rpy="0.0 0.0 0.0"/>
             <link name="hull"/>
+        </actuator>
+
+        <!-- Setpoints from DUNE (SetServoPosition) are radians.
+             Document order defines the servo ids (0-3).
+             max_velocity rate-limits the fin so a position step does not
+             slam the very light fin link (~27 g) into the water column at
+             once, which can destabilize the explicit hydrodynamic forces. -->
+        <actuator name="servo_fin_top" type="servo">
+            <controller position_gain="1.0" velocity_gain="1.0" max_torque="10.0" max_velocity="3.0"/>
+            <initial position="0.0"/>
+            <joint name="fin_top_joint"/>
+        </actuator>
+
+        <actuator name="servo_fin_starboard" type="servo">
+            <controller position_gain="1.0" velocity_gain="1.0" max_torque="10.0" max_velocity="3.0"/>
+            <initial position="0.0"/>
+            <joint name="fin_starboard_joint"/>
+        </actuator>
+
+        <actuator name="servo_fin_bottom" type="servo">
+            <controller position_gain="1.0" velocity_gain="1.0" max_torque="10.0" max_velocity="3.0"/>
+            <initial position="0.0"/>
+            <joint name="fin_bottom_joint"/>
+        </actuator>
+
+        <actuator name="servo_fin_port" type="servo">
+            <controller position_gain="1.0" velocity_gain="1.0" max_torque="10.0" max_velocity="3.0"/>
+            <initial position="0.0"/>
+            <joint name="fin_port_joint"/>
         </actuator>
 
         <sensor name="IMU" type="imu" rate="50.0">
@@ -95,6 +243,6 @@
             <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
         </sensor>
 
-        <world_transform xyz="0.0 0.0 0.0" rpy="0.0 1.5708 0.0"/>
+        <world_transform xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
     </robot>
 </scenario>

@@ -5,10 +5,19 @@
     A ready-to-run instance built from the shared world (basic.scn) and the
     LAUV template (lauv.scn). To add another vehicle, copy this file and
     change the robot name passed below (and the matching DUNE 'Robot Name').
+
+    All arguments are mandatory (Stonefish has no defaults). mass/cg_* set
+    the hull mass properties; edit them with etc/sim/lauv_trim.py (CLI or
+    GUI) rather than by hand — pitch trim is millimetre-sensitive in cg_x.
+    See etc/sim/README.md.
 -->
 <scenario>
     <include file="basic.scn"/>
     <include file="lauv.scn">
         <arg name="name" value="lauv-simulator-1"/>
+        <arg name="mass" value="33.0"/>
+        <arg name="cg_x" value="0.0795"/>
+        <arg name="cg_y" value="0.0"/>
+        <arg name="cg_z" value="0.009"/>
     </include>
 </scenario>
