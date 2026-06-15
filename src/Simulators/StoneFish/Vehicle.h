@@ -72,6 +72,31 @@ namespace Simulators
         sf::Vector3 angularVelocity;
       };
 
+      //! Dynamics Stonefish computed for one link of the robot.
+      struct LinkDynamics
+      {
+        //! Link name.
+        std::string name;
+        //! Mass [kg].
+        double mass;
+        //! Total volume [m^3].
+        double volume;
+        //! Currently submerged volume [m^3].
+        double submergedVolume;
+        //! Mass of displaced fluid for the total volume [kg].
+        double displaced;
+        //! Diagonal inertia [kg.m^2].
+        sf::Vector3 inertia;
+        //! Hydrodynamic added mass [kg].
+        sf::Vector3 addedMass;
+        //! Hydrodynamic added inertia [kg.m^2].
+        sf::Vector3 addedInertia;
+        //! Centre of gravity in the origin frame [m].
+        sf::Vector3 cg;
+        //! Centre of buoyancy in the CG frame [m].
+        sf::Vector3 cb;
+      };
+
       //! Constructor.
       //! @param[in] robot robot created by the simulation, must outlive this object.
       explicit Vehicle(sf::Robot* robot);
@@ -86,6 +111,25 @@ namespace Simulators
       //! Current dynamic state of the robot.
       State
       getState(void) const;
+
+      //! Log the dynamics that Stonefish computed for each link of the
+      //! robot: mass, inertia, hydrodynamic added mass/inertia, volume and
+      //! the resulting buoyancy, plus the CG and centre of buoyancy. These
+      //! are otherwise derived silently from the meshes and material
+      //! densities, so this dump is the way to catch a mis-set mass, an
+      //! over-light link or a CG/CB offset that would destabilise the sim.
+      //! @param[in] water_density fluid density [kg/m^3] used to turn the
+      //! displaced volume into displaced mass.
+      void
+      logDynamics(double water_density) const;
+
+      //! Collect the per-link dynamics Stonefish computed for the robot, in
+      //! link order. Same data as logDynamics(), exposed for structured output.
+      //! @param[in] water_density fluid density [kg/m^3] used to turn the
+      //! displaced volume into displaced mass.
+      //! @return one entry per link.
+      std::vector<LinkDynamics>
+      getDynamics(double water_density) const;
 
       //! Queue a setpoint for an actuator of the thrust bank (any thread).
       //! Thrusters and propellers take values in [-1, 1] (scenario must use
@@ -117,6 +161,13 @@ namespace Simulators
       getThrusterName(size_t index) const
       {
         return m_thrusters[index]->getName();
+      }
+
+      //! Name of a servo bank actuator.
+      std::string
+      getServoName(size_t index) const
+      {
+        return m_servos[index]->getName();
       }
 
       //! Rotational speed of a thrust bank actuator.

@@ -78,6 +78,68 @@ namespace Simulators
       return state;
     }
 
+    std::vector<Vehicle::LinkDynamics>
+    Vehicle::getDynamics(double water_density) const
+    {
+      std::vector<LinkDynamics> links;
+
+      sf::SolidEntity* link;
+      for (size_t i = 0; (link = m_robot->getLink(i)) != nullptr; ++i)
+      {
+        LinkDynamics d;
+        d.name = link->getName();
+        d.mass = link->getMass();
+        d.volume = link->getVolume();
+        d.submergedVolume = link->getSubmergedVolume();
+        d.displaced = d.volume * water_density;
+        d.inertia = link->getInertia();
+        d.addedMass = link->getAddedMass();
+        d.addedInertia = link->getAddedInertia();
+        d.cg = link->getCG2OTransform().getOrigin();
+        d.cb = link->getCB();
+        links.push_back(d);
+      }
+
+      return links;
+    }
+
+    void
+    Vehicle::logDynamics(double water_density) const
+    {
+      DUNE_MSG("Vehicle", "--- computed link dynamics (water " << water_density << " kg/m^3) ---");
+
+      double total_mass = 0.0;
+      double total_disp = 0.0;
+
+      const std::vector<LinkDynamics> links = getDynamics(water_density);
+      for (size_t i = 0; i < links.size(); ++i)
+      {
+        const LinkDynamics& d = links[i];
+        total_mass += d.mass;
+        total_disp += d.displaced;
+
+        DUNE_MSG("Vehicle", "link " << i << " '" << d.name << "': mass " << d.mass
+                                    << " kg, displaced " << d.displaced << " kg (net "
+                                    << (d.displaced - d.mass) << "), volume " << d.volume
+                                    << " m^3 (submerged " << d.submergedVolume << ")");
+        DUNE_MSG("Vehicle", "  inertia [" << d.inertia.x() << ", " << d.inertia.y() << ", "
+                                          << d.inertia.z() << "] kg.m^2, added mass ["
+                                          << d.addedMass.x() << ", " << d.addedMass.y() << ", "
+                                          << d.addedMass.z() << "] kg, added inertia ["
+                                          << d.addedInertia.x() << ", " << d.addedInertia.y()
+                                          << ", " << d.addedInertia.z() << "]");
+        DUNE_MSG("Vehicle", "  CG (origin frame) [" << d.cg.x() << ", " << d.cg.y() << ", "
+                                                    << d.cg.z() << "] m, CB (CG frame) ["
+                                                    << d.cb.x() << ", " << d.cb.y() << ", "
+                                                    << d.cb.z() << "] m");
+      }
+
+      DUNE_MSG("Vehicle", "totals: mass " << total_mass << " kg, displaced " << total_disp
+                                          << " kg, net buoyancy " << (total_disp - total_mass)
+                                          << " kg ("
+                                          << (total_disp > total_mass ? "floats" : "sinks") << ")");
+    }
+
     void
     Vehicle::setThrust(unsigned index, double value)
     {
