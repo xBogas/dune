@@ -32,6 +32,7 @@
 
 // Local headers.
 #include "Engine.h"
+#include "Recorder.h"
 #include "Scenario.h"
 #include "Sensors.h"
 #include "Vehicle.h"
@@ -79,6 +80,10 @@ namespace Simulators
       double frequency;
       //! Actuator feedback frequency.
       double feedback_frequency;
+      //! Dump per-link dynamics once, when the scenario is built.
+      bool dump_dynamics;
+      //! Step-trace logging rate (0 logs every step, -1 disable).
+      double log_sim_hz;
     };
 
     struct Task: public DUNE::Tasks::Task
@@ -97,6 +102,10 @@ namespace Simulators
       IMC::SimulatedState m_sstate;
       //! Actuator feedback timer.
       Time::Counter<double> m_feedback_timer;
+      //! Resolved directory for the trace files.
+      Path m_current_log;
+      //! Writes the build snapshot and step trace.
+      Recorder m_recorder;
       //! Task arguments.
       Arguments m_args;
 
@@ -130,12 +139,9 @@ namespace Simulators
         bind<IMC::SetServoPosition>(this);
       }
 
-      //! Update internal state with new parameter values.
       void
-      onUpdateParameters(void)
+      validateScenario(void)
       {
-        m_feedback_timer.setTop(1.0 / m_args.feedback_frequency);
-
         m_scenario = m_ctx.dir_cfg / m_args.scenario;
         if (m_scenario.exists())
           return;
@@ -145,6 +151,19 @@ namespace Simulators
           return;
 
         throw RestartNeeded("Invalid parameter 'Scenario Path': " + m_args.scenario, 5);
+      }
+
+      //! Update internal state with new parameter values.
+      void
+      onUpdateParameters(void)
+      {
+        m_feedback_timer.setTop(1.0 / m_args.feedback_frequency);
+
+        m_recorder.setFrequency(m_args.log_sim_hz);
+        if (!m_recorder.isOpen())
+          m_recorder.open(m_current_log, m_args.log_sim_hz);
+
+        validateScenario();
       }
 
       //! Reserve one entity per device declared in the scenario, so that
@@ -181,8 +200,8 @@ namespace Simulators
             entity->setState(IMC::EntityState::ESTA_BOOT, Status::CODE_INIT);
             entity->setState(IMC::EntityState::ESTA_NORMAL, Status::CODE_ACTIVE);
 
-            war("reserved system (%s) entity '%s' (%s)", device.robot.c_str(), device.name.c_str(),
-                device.type.c_str());
+            debug("reserved system (%s) entity '%s' (%s)", device.robot.c_str(),
+                  device.name.c_str(), device.type.c_str());
           }
           catch (const std::exception& e)
           {
@@ -205,6 +224,19 @@ namespace Simulators
 
         if (m_engine != nullptr)
           m_engine->exit();
+      }
+
+      void
+      consume(const IMC::LoggingControl* msg)
+      {
+        if (msg->getSource() != getSystemId())
+          return;
+
+        if (msg->op == IMC::LoggingControl::COP_STARTED)
+        {
+          m_current_log = m_ctx.dir_log / msg->name;
+          m_recorder.open(m_current_log, m_args.log_sim_hz);
+        }
       }
 
       void
@@ -241,6 +273,8 @@ namespace Simulators
       void
       onBuild(sf::SimulationManager& sim)
       {
+        consumeMessages();
+
         sf::Robot* robot = nullptr;
         robot = sim.getRobot(getSystemName());
         if (robot == nullptr)
@@ -249,10 +283,16 @@ namespace Simulators
           robot = sim.getRobot(0u);
         }
 
+        sf::Ocean* ocean = sim.getOcean();
+        const double water_density = ocean != nullptr ? ocean->getLiquid().density : 1000.0;
+
         if (robot != nullptr)
         {
           m_vehicle = std::make_shared<Vehicle>(robot);
           inf("controlling robot '%s'", m_vehicle->getName().c_str());
+
+          if (m_args.dump_dynamics)
+            m_vehicle->logDynamics(water_density);
         }
         else
         {
@@ -267,8 +307,28 @@ namespace Simulators
         m_sstate.lon = Angles::radians(lon);
         m_sstate.height = height;
 
+        if (m_vehicle != nullptr)
+        {
+          logBuild(*m_vehicle, water_density, lat, lon, height);
+        }
+
         m_bridge.bind(sim, m_eids);
         setEntityState(IMC::EntityState::ESTA_NORMAL, Status::CODE_ACTIVE);
+      }
+
+      void
+      logBuild(const Vehicle& vehicle, double water_density, double lat, double lon, double height)
+      {
+        try
+        {
+          FileSystem::Path build_log = m_current_log / vehicle.getName() + ".json";
+          m_recorder.logBuild(build_log, m_args.scenario, vehicle, water_density, lat, lon, height);
+          inf("writing simulation trace to %s", build_log.c_str());
+        }
+        catch (const std::exception& e)
+        {
+          war("simulation trace disabled: %s", e.what());
+        }
       }
 
       //! Exchange data with the simulation: apply pending actuator
@@ -294,6 +354,9 @@ namespace Simulators
           m_feedback_timer.reset();
           dispatchFeedback();
         }
+
+        if (m_recorder.isOpen())
+          m_recorder.logStep(sim.getSimulationTime(), *m_vehicle);
       }
 
       //! Dispatch the ground truth state of the robot.
