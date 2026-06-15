@@ -82,6 +82,10 @@ namespace Simulators
       double feedback_frequency;
       //! Dump per-link dynamics once, when the scenario is built.
       bool dump_dynamics;
+      //! Linear speed above which the state is flagged as divergent (0 off).
+      double max_speed;
+      //! Angular speed above which the state is flagged as divergent (0 off).
+      double max_rate;
       //! Step-trace logging rate (0 logs every step, -1 disable).
       double log_sim_hz;
     };
@@ -102,6 +106,8 @@ namespace Simulators
       IMC::SimulatedState m_sstate;
       //! Actuator feedback timer.
       Time::Counter<double> m_feedback_timer;
+      //! True once the simulation has been flagged as divergent.
+      bool m_diverged;
       //! Resolved directory for the trace files.
       Path m_current_log;
       //! Writes the build snapshot and step trace.
@@ -115,7 +121,8 @@ namespace Simulators
       Task(const std::string& name, Tasks::Context& ctx):
         DUNE::Tasks::Task(name, ctx),
         m_engine(nullptr),
-        m_bridge(this)
+        m_bridge(this),
+        m_diverged(false)
       {
         param("Scenario Path", m_args.scenario)
           .description("Relative path from the configuration directory to the scenario file to be "
@@ -135,8 +142,34 @@ namespace Simulators
           .units(Units::Hertz)
           .description("Frequency of actuator feedback (Rpm and ServoPosition).");
 
+        param("Dump Dynamics", m_args.dump_dynamics)
+          .defaultValue("true")
+          .description("Log the per-link mass, inertia, added mass, volume and "
+                       "buoyancy computed by Stonefish once the scenario is built.");
+
+        param("Divergence - Maximum Speed", m_args.max_speed)
+          .defaultValue("25.0")
+          .units(Units::MeterPerSecond)
+          .description("Linear speed above which the simulated state is reported "
+                       "as divergent (numerical-instability guard). 0 disables.");
+
+        param("Divergence - Maximum Rate", m_args.max_rate)
+          .defaultValue("25.0")
+          .units(Units::RadianPerSecond)
+          .description("Angular speed above which the simulated state is reported "
+                       "as divergent. 0 disables.");
+
+        param("Simulation Logging - Frequency", m_args.log_sim_hz)
+          .defaultValue("-1.0")
+          .units(Units::Hertz)
+          .description("Rate at which step records are appended to the trace. 0 logs every "
+                       "physics step. -1 logging disabled");
+
         bind<IMC::SetThrusterActuation>(this);
         bind<IMC::SetServoPosition>(this);
+        bind<IMC::LoggingControl>(this);
+
+        m_current_log = m_ctx.dir_log / getSystemName();
       }
 
       void
@@ -242,6 +275,7 @@ namespace Simulators
       void
       consume(const IMC::SetThrusterActuation* msg)
       {
+        // TODO: route source/destination to simulated system
         if (m_vehicle != nullptr)
           m_vehicle->setThrust(msg->id, msg->value);
       }
@@ -360,11 +394,51 @@ namespace Simulators
       }
 
       //! Dispatch the ground truth state of the robot.
+      //! True if any component of a vector is NaN or infinite.
+      static bool
+      isFinite(const sf::Vector3& v)
+      {
+        return std::isfinite(v.x()) && std::isfinite(v.y()) && std::isfinite(v.z());
+      }
+
+      //! Guard against numerical divergence: detect NaN/infinity or an
+      //! implausibly large velocity in the robot state. On the first
+      //! occurrence report the offending values and the simulation time and
+      //! mark the entity in error. Returns false once the state is bad
+      bool
+      stateIsSane(const Vehicle::State& s, double t)
+      {
+        const double v = s.linearVelocity.length();
+        const double w = s.angularVelocity.length();
+
+        const bool finite = isFinite(s.position) && isFinite(s.orientation)
+                            && isFinite(s.linearVelocity) && isFinite(s.angularVelocity);
+        const bool fast = (m_args.max_speed > 0.0 && v > m_args.max_speed)
+                          || (m_args.max_rate > 0.0 && w > m_args.max_rate);
+
+        if (finite && !fast)
+          return true;
+
+        if (!m_diverged)
+        {
+          m_diverged = true;
+          err("simulation diverged at t=%.3f s: |v|=%g m/s, |w|=%g rad/s%s "
+              "(position [%g, %g, %g])",
+              t, v, w, finite ? "" : ", NaN/Inf", s.position.x(), s.position.y(), s.position.z());
+          setEntityState(IMC::EntityState::ESTA_ERROR, "simulation diverged");
+        }
+        return false;
+      }
+
       void
       dispatchState(sf::SimulationManager& sim)
       {
         const Vehicle::State state = m_vehicle->getState();
 
+        if (!stateIsSane(state, sim.getSimulationTime()))
+          return;
+
+        // TODO: Update lat, lon if vehicle goes far from origin
         m_sstate.x = state.position.x();
         m_sstate.y = state.position.y();
         m_sstate.z = state.position.z();
