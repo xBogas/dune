@@ -390,7 +390,14 @@ namespace Simulators
         }
 
         if (!stopping())
-          throw RestartNeeded("simulation terminated", 10);
+        {
+          war("Stonefish simulation stopped! Stopping DUNE ...");
+          raise(SIGTERM);
+        }
+
+        // wait for stop signal
+        while (!stopping())
+          waitForMessages(1.0);
       }
     };
   }
