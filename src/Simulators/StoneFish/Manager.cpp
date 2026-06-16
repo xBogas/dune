@@ -14,10 +14,11 @@ namespace Simulators
   namespace StoneFish
   {
     SimManager::SimManager(sf::Scalar stepsPerSecond, simCallback onStep, simCallback onBuild,
-                           const std::string& scenarioPath):
+                           simCallback onPreTick, const std::string& scenarioPath):
       SimulationManager(stepsPerSecond),
       m_onStep(onStep),
       m_onBuild(onBuild),
+      m_onPreTick(onPreTick),
       m_scenarioPath(scenarioPath)
     { }
 
@@ -25,7 +26,32 @@ namespace Simulators
     SimManager::SimulationStepCompleted(sf::Scalar timeStep)
     {
       (void)timeStep;  // Unused parameter
+
+      // Install the body-lift pre-tick on the first completed step. It must
+      // happen before the IC solve.
+      // SolveICProblem() run afterwards and re-set the engine's own pre-tick 
+      // overwriting an earlier install.
+      if (!m_pretick_installed && m_onPreTick)
+      {
+        getDynamicsWorld()->setInternalTickCallback(PreTickCallback, this, true);
+        m_pretick_installed = true;
+      }
+
       m_onStep(*this);
+    }
+
+    void
+    SimManager::PreTickCallback(btDynamicsWorld* world, sf::Scalar timeStep)
+    {
+      // Run the engine's standard pre-tick first: it clears every body's
+      // accumulated forces, then lets actuators, joints and entities apply theirs.
+      // Our extra force is added afterwards so it survives to the integration of this sub-step
+      // (a force applied from SimulationStepCompleted would be cleared here).
+      sf::SimulationManager::SimulationTickCallback(world, timeStep);
+
+      SimManager* self = static_cast<SimManager*>(world->getWorldUserInfo());
+      if (self != nullptr && self->m_onPreTick)
+        self->m_onPreTick(*self);
     }
 
     void

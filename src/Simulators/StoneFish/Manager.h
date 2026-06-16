@@ -34,6 +34,8 @@
 
 #include <Stonefish/core/SimulationManager.h>
 
+class btDynamicsWorld;
+
 namespace Simulators
 {
   namespace StoneFish
@@ -44,7 +46,7 @@ namespace Simulators
     {
     public:
       SimManager(sf::Scalar stepsPerSecond, simCallback onStep, simCallback onBuild,
-                 const std::string& scenarioPath);
+                 simCallback onPreTick, const std::string& scenarioPath);
 
       void
       SimulationStepCompleted(sf::Scalar timeStep) override;
@@ -53,8 +55,19 @@ namespace Simulators
       BuildScenario(void);
 
     private:
+      //! Pre-tick callback: runs the standard Stonefish pre-tick (force
+      //! reset, actuators, mesh hydrodynamics) and then invokes m_onPreTick,
+      //! so its forces are added to the bodies before Bullet integrates the
+      //! sub-step. Installed once the scenario is built.
+      static void
+      PreTickCallback(btDynamicsWorld* world, sf::Scalar timeStep);
+
       simCallback m_onStep;
       simCallback m_onBuild;
+      //! Called every physics sub-step, after the engine's own pre-tick.
+      simCallback m_onPreTick;
+      //! True once the body-lift pre-tick wrapper has been installed.
+      bool m_pretick_installed = false;
       const std::string m_scenarioPath;
     };
   }
