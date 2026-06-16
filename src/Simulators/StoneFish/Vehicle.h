@@ -72,6 +72,36 @@ namespace Simulators
         sf::Vector3 angularVelocity;
       };
 
+      //! Hull body-lift coefficients.
+      //! Same formulation and units as Simulators/VSIM (UUV, "Body Lift Coefficients").
+      struct BodyLift
+      {
+        union
+        {
+          //! Raw contiguous storage used when loading from configuration.
+          double data[8];
+          struct
+          {
+            //! Sway force from sway velocity, Y = Yuv * v * u [N].
+            double Yuv;
+            //! Sway force from yaw rate, Y = Yur * r * u [N].
+            double Yur;
+            //! Heave force from heave velocity, Z = Zuw * w * u [N].
+            double Zuw;
+            //! Heave force from pitch rate, Z = Zuq * q * u [N].
+            double Zuq;
+            //! Pitch moment from heave velocity, M = Muw * w * u [N.m].
+            double Muw;
+            //! Pitch moment from pitch rate, M = Muq * q * u [N.m].
+            double Muq;
+            //! Yaw moment from sway velocity, N = Nuv * v * u [N.m].
+            double Nuv;
+            //! Yaw moment from yaw rate, N = Nur * r * u [N.m].
+            double Nur;
+          };
+        };
+      };
+
       //! Dynamics Stonefish computed for one link of the robot.
       struct LinkDynamics
       {

@@ -47,11 +47,11 @@ namespace Simulators
     {
     public:
       Engine(SimMode mode, const DUNE::FileSystem::Path& scn_fd, double freq, simCallback onStep,
-             simCallback onBuild):
+             simCallback onBuild, simCallback onPreTick):
         m_manager(nullptr),
         m_sim(nullptr)
       {
-        m_manager = new SimManager(freq, onStep, onBuild, scn_fd.str());
+        m_manager = new SimManager(freq, onStep, onBuild, onPreTick, scn_fd.str());
 
         std::string data_dir = scn_fd.dirname().str() + "/";
 

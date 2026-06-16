@@ -141,6 +141,33 @@ namespace Simulators
     }
 
     void
+    Vehicle::applyBodyLift(const BodyLift& c) const
+    {
+      sf::SolidEntity* base = m_robot->getBaseLink();
+      if (base == nullptr)
+        return;
+
+      // Body-frame velocities (Stonefish reports them in the world frame).
+      const sf::Matrix3 bodyToWorld = m_robot->getTransform().getBasis();
+      const sf::Matrix3 worldToBody = bodyToWorld.transpose();
+      const sf::Vector3 vel = worldToBody * base->getLinearVelocity();
+      const sf::Vector3 omega = worldToBody * base->getAngularVelocity();
+
+      const double u = vel.x();
+      const double v = vel.y();
+      const double w = vel.z();
+      const double q = omega.y();
+      const double r = omega.z();
+
+      // Lifting-body force and moment, proportional to the axial speed u (same model as Simulators/VSIM)
+      const sf::Vector3 force(0.0, (c.Yuv * v + c.Yur * r) * u, (c.Zuw * w + c.Zuq * q) * u);
+      const sf::Vector3 torque(0.0, (c.Muw * w + c.Muq * q) * u, (c.Nuv * v + c.Nur * r) * u);
+
+      base->ApplyCentralForce(bodyToWorld * force);
+      base->ApplyTorque(bodyToWorld * torque);
+    }
+
+    void
     Vehicle::setThrust(unsigned index, double value)
     {
       if (index >= m_thrusters.size())

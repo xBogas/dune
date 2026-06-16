@@ -88,6 +88,8 @@ namespace Simulators
       double max_rate;
       //! Step-trace logging rate (0 logs every step, -1 disable).
       double log_sim_hz;
+      //! Apply the hull body-lift force/moment each physics step.
+      bool body_lift;
     };
 
     struct Task: public DUNE::Tasks::Task
@@ -112,6 +114,10 @@ namespace Simulators
       Path m_current_log;
       //! Writes the build snapshot and step trace.
       Recorder m_recorder;
+      //! Flag to apply the hull body-lift force/moment each physics step.
+      bool m_bodylift;
+      //! Hull body-lift coefficients, resolved from m_args.body_lift_coef.
+      Vehicle::BodyLift m_bodylift_coef;
       //! Task arguments.
       Arguments m_args;
 
@@ -122,7 +128,8 @@ namespace Simulators
         DUNE::Tasks::Task(name, ctx),
         m_engine(nullptr),
         m_bridge(this),
-        m_diverged(false)
+        m_diverged(false),
+        m_bodylift(false)
       {
         param("Scenario Path", m_args.scenario)
           .description("Relative path from the configuration directory to the scenario file to be "
@@ -195,6 +202,16 @@ namespace Simulators
         m_recorder.setFrequency(m_args.log_sim_hz);
         if (!m_recorder.isOpen())
           m_recorder.open(m_current_log, m_args.log_sim_hz);
+
+        Parsers::Config& cfg = m_ctx.config;
+
+        std::string model;
+        cfg.get("General", "Vehicle Type", "lauv", model);
+        std::string section = "VSIM/Model/" + model;
+        bool has_bodylift = cfg.getList(section, "Hull Body Lift Coefficients", m_bodylift_coef.data, 8);
+        m_bodylift = m_args.body_lift && has_bodylift;
+        if (m_args.body_lift && !has_bodylift)
+          war("'Hull Body Lift Coefficients' needs 8 values, body lift disabled");
 
         validateScenario();
       }
@@ -393,6 +410,16 @@ namespace Simulators
           m_recorder.logStep(sim.getSimulationTime(), *m_vehicle);
       }
 
+      //! Apply the hull body-lift force/moment for the current state.
+      //! Runs in the simulation thread, once per physics sub-step, before
+      //! Bullet integrates it (see SimManager::PreTickCallback).
+      void
+      onPreTick(sf::SimulationManager&)
+      {
+        if (m_vehicle != nullptr && m_bodylift)
+          m_vehicle->applyBodyLift(m_bodylift_coef);
+      }
+
       //! Dispatch the ground truth state of the robot.
       //! True if any component of a vector is NaN or infinite.
       static bool
@@ -508,8 +535,9 @@ namespace Simulators
         SimMode mode = m_args.graphics ? SimMode::GRAPHICAL : SimMode::CONSOLE;
         simCallback onStepCb = std::bind(&Task::onStep, this, std::placeholders::_1);
         simCallback onBuildCb = std::bind(&Task::onBuild, this, std::placeholders::_1);
+        simCallback onPreTickCb = std::bind(&Task::onPreTick, this, std::placeholders::_1);
 
-        m_engine = new Engine(mode, m_scenario, m_args.frequency, onStepCb, onBuildCb);
+        m_engine = new Engine(mode, m_scenario, m_args.frequency, onStepCb, onBuildCb, onPreTickCb);
         m_engine->start();
       }
 
