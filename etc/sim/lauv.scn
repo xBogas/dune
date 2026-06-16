@@ -36,11 +36,13 @@
       - lauv_hull_phy.obj  low-poly solid of revolution for physics
       - lauv_fin_*.obj     tail fins, modeled about their pivot point
 
-    Tail has 4 fins in a '+' layout plus one thruster. Servo order (and
-    therefore DUNE SetServoPosition ids, assigned in document order):
-      0: top (0°)  1: starboard (90°)  2: bottom (180°)  3: port (270°)
-    Vertical fins rotate about Z (yaw/rudder), horizontal fins about
-    Y (pitch/elevator). All fins pivot at X = -0.7077 m.
+    Tail has 4 fins in a '+' layout plus one thruster. 
+    DUNE SetServoPosition ids are the actuator document order, chosen
+    to match Control.AUV.Allocator:
+      0: top      (vertical, yaw)
+      1: starboard (horizontal, pitch)
+      2: port     (horizontal, pitch) 
+      3: bottom    (vertical, yaw)
 -->
 <scenario>
     <robot name="$(arg name)" fixed="false" self_collisions="false">
@@ -55,116 +57,40 @@
             </visual>
             <material name="Hull"/>
             <look name="yellow"/>
-            <!-- Mass and CG come from include arguments (see header).
-                 The CG must sit (nearly) under the mesh volume centroid
-                 (= CB, x = +0.082) or the vehicle pitches until CB is
-                 above CG. Tune with etc/sim/lauv_trim.py. -->
             <mass value="$(arg mass)"/>
             <inertia xyz="0.5 10.0 10.0"/>
             <cg xyz="$(arg cg_x) $(arg cg_y) $(arg cg_z)" rpy="0.0 0.0 0.0"/>
         </base_link>
 
-        <!-- Tail fins ('+' layout). Mesh coordinates are relative to the
-             pivot, so each link frame sits on the joint axis. -->
-        <link name="fin_top" type="model" physics="submerged">
-            <physical>
-                <mesh filename="lauv_fin_top.obj" scale="1.0"/>
-                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
-            </physical>
-            <material name="Hull"/>
-            <look name="yellow"/>
-        </link>
-
-        <link name="fin_starboard" type="model" physics="submerged">
-            <physical>
-                <mesh filename="lauv_fin_starboard.obj" scale="1.0"/>
-                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
-            </physical>
-            <material name="Hull"/>
-            <look name="yellow"/>
-        </link>
-
-        <link name="fin_bottom" type="model" physics="submerged">
-            <physical>
-                <mesh filename="lauv_fin_bottom.obj" scale="1.0"/>
-                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
-            </physical>
-            <material name="Hull"/>
-            <look name="yellow"/>
-        </link>
-
-        <link name="fin_port" type="model" physics="submerged">
-            <physical>
-                <mesh filename="lauv_fin_port.obj" scale="1.0"/>
-                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
-            </physical>
-            <material name="Hull"/>
-            <look name="yellow"/>
-        </link>
-
-        <joint name="fin_top_joint" type="revolute">
-            <parent name="hull"/>
-            <child name="fin_top"/>
-            <origin xyz="-0.7077 0.0 0.0" rpy="0.0 0.0 0.0"/>
-            <axis xyz="0.0 0.0 1.0"/>
-            <limits min="-0.7854" max="0.7854"/>
-        </joint>
-
-        <joint name="fin_starboard_joint" type="revolute">
-            <parent name="hull"/>
-            <child name="fin_starboard"/>
-            <origin xyz="-0.7077 0.0 0.0" rpy="0.0 0.0 0.0"/>
-            <axis xyz="0.0 1.0 0.0"/>
-            <limits min="-0.7854" max="0.7854"/>
-        </joint>
-
-        <joint name="fin_bottom_joint" type="revolute">
-            <parent name="hull"/>
-            <child name="fin_bottom"/>
-            <origin xyz="-0.7077 0.0 0.0" rpy="0.0 0.0 0.0"/>
-            <axis xyz="0.0 0.0 1.0"/>
-            <limits min="-0.7854" max="0.7854"/>
-        </joint>
-
-        <joint name="fin_port_joint" type="revolute">
-            <parent name="hull"/>
-            <child name="fin_port"/>
-            <origin xyz="-0.7077 0.0 0.0" rpy="0.0 0.0 0.0"/>
-            <axis xyz="0.0 1.0 0.0"/>
-            <limits min="-0.7854" max="0.7854"/>
-        </joint>
+        <!-- Tail control surfaces are modeled as Stonefish 'rudder'
+             actuators (see the actuator section below), NOT as separate
+             revolute fin links. A thin fin link weighs only ~27 g, three
+             orders of magnitude lighter than the 33 kg hull; that mass
+             ratio makes the multibody system stiff and the explicit
+             integrator diverges (velocities blow up, flipping sign every
+             step) after a few deflections. A rudder actuator instead
+             applies an analytic lift/drag force directly to the hull, so
+             there is no light dynamic link and no instability. -->
 
         <!-- Setpoints from DUNE (SetThrusterActuation) are normalized [-1, 1]. -->
         <actuator name="thruster_surge" type="thruster">
             <!-- max_setpoint is the propeller speed [rad/s] at full action 1.0
-                 (zero_order rotor: omega = setpoint). rpm = omega*30/pi, so
-                 125.66 rad/s = 1200 rpm (104.7 = 1000 rpm). -->
-            <specs max_setpoint="125.66" inverted_setpoint="false" normalized_setpoint="true"/>
+                 (zero_order rotor: omega = setpoint). rpm = omega*30/pi. -->
+            <specs max_setpoint="261.8" inverted_setpoint="false" normalized_setpoint="true"/>
             <propeller diameter="0.113" right="true">
                 <mesh filename="propeller.obj" scale="1.0"/>
                 <material name="Aluminum"/>
                 <look name="gray"/>
             </propeller>
             <rotor_dynamics type="zero_order"/>
-            <!-- Quadratic model is T = kt * omega * |omega| with omega in
-                 rad/s. kt (thrust_coeff) is the ONLY force knob here; the
-                 propeller diameter, the fluid density and the propeller mesh
-                 are all ignored by this model (mesh is visual only). Full
-                 setpoint gives omega = max_setpoint = 125.66, so bollard thrust
-                 is T_max = kt * 125.66^2 = kt * 15791. kt = 0.0026 -> ~41 N.
-                 (At the previous max_setpoint = 104.7 / 1000 rpm, kt = 0.0026
-                 gave ~28 N and settled at ~1.76 m/s steady-state surge, runtime
-                 measured; raising the rpm raises thrust by max_setpoint^2.)
-
-                 TODO: parameterize the thruster against a real LAUV thruster.
+            <!-- TODO: parameterize the thruster against a real LAUV thruster.
                  - To match a real thruster's rated/bollard thrust, set
-                     kt = T_rated / max_setpoint^2  (e.g. 28 N -> kt = 0.00255).
+                     kt = T_rated / max_setpoint^2 .
                  - Do NOT recalibrate by kt_new = kt*(v_target/v_obs)^2: that
                    assumes v ~ sqrt(kt) (pure quadratic drag). Stonefish drag is
                    mesh-integrated (quadratic form term + linear skin-friction
                    term, both attitude-dependent), so the square law overshoots
-                   the target. If a speed target is required, tune kt
-                   empirically (run, measure SimulatedState.u, bisect).
+                   the target.
                  - For a physically faithful comparison, switch to
                    <thrust_model type="fluid_dynamics"> and supply the propeller
                    open-water coefficients K_T (forward/reverse) and K_Q. That
@@ -183,33 +109,62 @@
             <link name="hull"/>
         </actuator>
 
-        <!-- Setpoints from DUNE (SetServoPosition) are radians.
-             Document order defines the servo ids (0-3).
-             max_velocity rate-limits the fin so a position step does not
-             slam the very light fin link (~27 g) into the water column at
-             once, which can destabilize the explicit hydrodynamic forces. -->
-        <actuator name="servo_fin_top" type="servo">
-            <controller position_gain="1.0" velocity_gain="1.0" max_torque="10.0" max_velocity="3.0"/>
-            <initial position="0.0"/>
-            <joint name="fin_top_joint"/>
+        <!-- The Stonefish rudder rotates about its local Z and produces lift
+             along its local Y. So:
+               - yaw fins (top, bottom): actuator frame = hull frame, rpy 0.
+               - pitch fins (starboard, port): actuator frame rolled +90 deg
+                 about X so local Z -> hull Y (deflection) and local Y ->
+                 hull Z (force); the visual mesh is rolled back -90 deg so it
+                 still renders as a horizontal fin.. -->
+        <actuator name="fin_top" type="rudder">
+            <specs area="0.0080" lift_coeff="24.0" drag_coeff="0.9" max_angle="0.45" stall_angle="0.6" max_angular_rate="5.24" inverted="false"/>
+            <visual>
+                <mesh filename="lauv_fin_top.obj" scale="1.0"/>
+                <material name="Hull"/>
+                <look name="yellow"/>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+            </visual>
+            <origin xyz="-0.7077 0.0 0.0" rpy="0.0 0.0 0.0"/>
+            <link name="hull"/>
         </actuator>
 
-        <actuator name="servo_fin_starboard" type="servo">
-            <controller position_gain="1.0" velocity_gain="1.0" max_torque="10.0" max_velocity="3.0"/>
-            <initial position="0.0"/>
-            <joint name="fin_starboard_joint"/>
+        <actuator name="fin_starboard" type="rudder">
+            <!-- inverted: a pitch fin rolled +90 deg produces a nose-up
+                 moment for DUNE's nose-down (dive) command, so flip it. -->
+            <specs area="0.0080" lift_coeff="6.0" drag_coeff="0.9" max_angle="0.45" stall_angle="0.6" max_angular_rate="5.24" inverted="true"/>
+            <visual>
+                <mesh filename="lauv_fin_starboard.obj" scale="1.0"/>
+                <material name="Hull"/>
+                <look name="yellow"/>
+                <origin xyz="0.0 0.0 0.0" rpy="-1.5708 0.0 0.0"/>
+            </visual>
+            <origin xyz="-0.7077 0.0 0.0" rpy="1.5708 0.0 0.0"/>
+            <link name="hull"/>
         </actuator>
 
-        <actuator name="servo_fin_bottom" type="servo">
-            <controller position_gain="1.0" velocity_gain="1.0" max_torque="10.0" max_velocity="3.0"/>
-            <initial position="0.0"/>
-            <joint name="fin_bottom_joint"/>
+        <actuator name="fin_port" type="rudder">
+            <!-- inverted: pitch fin, same as starboard (see above). -->
+            <specs area="0.0080" lift_coeff="6.0" drag_coeff="0.9" max_angle="0.45" stall_angle="0.6" max_angular_rate="5.24" inverted="true"/>
+            <visual>
+                <mesh filename="lauv_fin_port.obj" scale="1.0"/>
+                <material name="Hull"/>
+                <look name="yellow"/>
+                <origin xyz="0.0 0.0 0.0" rpy="-1.5708 0.0 0.0"/>
+            </visual>
+            <origin xyz="-0.7077 0.0 0.0" rpy="1.5708 0.0 0.0"/>
+            <link name="hull"/>
         </actuator>
 
-        <actuator name="servo_fin_port" type="servo">
-            <controller position_gain="1.0" velocity_gain="1.0" max_torque="10.0" max_velocity="3.0"/>
-            <initial position="0.0"/>
-            <joint name="fin_port_joint"/>
+        <actuator name="fin_bottom" type="rudder">
+            <specs area="0.0080" lift_coeff="24.0" drag_coeff="0.9" max_angle="0.45" stall_angle="0.6" max_angular_rate="5.24" inverted="false"/>
+            <visual>
+                <mesh filename="lauv_fin_bottom.obj" scale="1.0"/>
+                <material name="Hull"/>
+                <look name="yellow"/>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+            </visual>
+            <origin xyz="-0.7077 0.0 0.0" rpy="0.0 0.0 0.0"/>
+            <link name="hull"/>
         </actuator>
 
         <sensor name="IMU" type="imu" rate="50.0">
