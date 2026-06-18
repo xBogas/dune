@@ -154,6 +154,13 @@ namespace Simulators
           .description("Log the per-link mass, inertia, added mass, volume and "
                        "buoyancy computed by Stonefish once the scenario is built.");
 
+        param("Hull Body Lift", m_args.body_lift)
+          .defaultValue("true")
+          .description("Apply a lifting-body force and moment to the hull each "
+                       "physics step. Adds the sideslip-driven turning moment and "
+                       "lateral lift that the mesh hydrodynamics miss; without it "
+                       "the hull over-damps yaw and the vehicle skids through turns.");
+
         param("Divergence - Maximum Speed", m_args.max_speed)
           .defaultValue("25.0")
           .units(Units::MeterPerSecond)
@@ -193,6 +200,22 @@ namespace Simulators
         throw RestartNeeded("Invalid parameter 'Scenario Path': " + m_args.scenario, 5);
       }
 
+      void
+      validateBodyLift(void)
+      {
+        Parsers::Config& cfg = m_ctx.config;
+
+        std::string model;
+        cfg.get("General", "Vehicle Type", "lauv", model);
+        std::string section = "VSIM/Model/" + model;
+
+        bool has_bodylift =
+          cfg.getList(section, "Hull Body Lift Coefficients", m_bodylift_coef.data, 8);
+        m_bodylift = m_args.body_lift && has_bodylift;
+        if (!m_bodylift)
+          war("'Hull Body Lift Coefficients' needs 8 values, body lift disabled");
+      }
+
       //! Update internal state with new parameter values.
       void
       onUpdateParameters(void)
@@ -203,16 +226,7 @@ namespace Simulators
         if (!m_recorder.isOpen())
           m_recorder.open(m_current_log, m_args.log_sim_hz);
 
-        Parsers::Config& cfg = m_ctx.config;
-
-        std::string model;
-        cfg.get("General", "Vehicle Type", "lauv", model);
-        std::string section = "VSIM/Model/" + model;
-        bool has_bodylift = cfg.getList(section, "Hull Body Lift Coefficients", m_bodylift_coef.data, 8);
-        m_bodylift = m_args.body_lift && has_bodylift;
-        if (m_args.body_lift && !has_bodylift)
-          war("'Hull Body Lift Coefficients' needs 8 values, body lift disabled");
-
+        validateBodyLift();
         validateScenario();
       }
 

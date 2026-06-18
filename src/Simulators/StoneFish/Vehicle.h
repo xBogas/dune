@@ -179,6 +179,16 @@ namespace Simulators
       void
       applySetpoints(void);
 
+      // TODO: Review this comment
+      //! Adds the lifting-body terms the mesh hydrodynamics
+      //! miss, so the hull develops a turning moment and lateral lift from
+      //! sideslip instead of merely damping them. See BodyLift.
+
+      //! Apply the hull body-lift force and moment for the current state
+      //! @param[in] c body-lift coefficients.
+      void
+      applyBodyLift(const BodyLift& c) const;
+
       //! Number of actuators in the thrust bank.
       size_t
       getThrusterCount(void) const
