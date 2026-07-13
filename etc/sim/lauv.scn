@@ -14,12 +14,21 @@
                 <arg name="cg_x" value="0.0795"/>
                 <arg name="cg_y" value="0.0"/>
                 <arg name="cg_z" value="0.009"/>
+                <arg name="pos_n" value="0.0"/>
+                <arg name="pos_e" value="0.0"/>
+                <arg name="pos_yaw" value="0.0"/>
             </include>
         </scenario>
 
     name   robot name; must match the DUNE system name ([General] Vehicle
-           in the .ini) of the node running Simulators.StoneFish, otherwise
-           the task falls back to the first robot in the scenario.
+           in the .ini) of the node running Simulators.StoneFish. With several
+           robots, each must be named after the vehicle it represents; the task
+           binds a robot to its IMC system from the EntityList that system
+           announces (so "<name>/imu" data is dispatched from that system). A
+           single robot whose name does not match is taken as the local one.
+    pos_n/pos_e/pos_yaw  initial pose of the robot in the world NED frame:
+           north [m], east [m] and heading [rad]. Space vehicles apart so they
+           do not spawn on top of each other.
     mass   hull dry mass [kg]; displaced volume is 0.0326 m^3 (33.4 kg of
            water), so < 33.4 floats and > 33.4 sinks.
     cg_x/y/z  hull centre of gravity [m] in the hull frame (X fwd, Y stbd,
@@ -57,6 +66,10 @@
             </visual>
             <material name="Hull"/>
             <look name="yellow"/>
+            <!-- Mass and CG come from include arguments (see header).
+                 The CG must sit (nearly) under the mesh volume centroid (= CB, x = +0.082) 
+                 or the vehicle pitches until CB is above CG. 
+                 Tune with etc/sim/lauv_trim.py. -->
             <mass value="$(arg mass)"/>
             <inertia xyz="0.5 10.0 10.0"/>
             <cg xyz="$(arg cg_x) $(arg cg_y) $(arg cg_z)" rpy="0.0 0.0 0.0"/>
@@ -130,8 +143,11 @@
 
         <actuator name="fin_starboard" type="rudder">
             <!-- inverted: a pitch fin rolled +90 deg produces a nose-up
-                 moment for DUNE's nose-down (dive) command, so flip it. -->
-            <specs area="0.0080" lift_coeff="6.0" drag_coeff="0.9" max_angle="0.45" stall_angle="0.6" max_angular_rate="5.24" inverted="true"/>
+                 moment for DUNE's nose-down (dive) command, so flip it.
+                 lift_coeff 24 (matches the yaw fins): at 6 the pitch fins
+                 saturate nose-down yet the +0.38 kg buoyant hull pitches only
+                 ~7 deg and never dives; VSIM uses symmetric fin forces. -->
+            <specs area="0.0080" lift_coeff="24.0" drag_coeff="0.9" max_angle="0.45" stall_angle="0.6" max_angular_rate="5.24" inverted="true"/>
             <visual>
                 <mesh filename="lauv_fin_starboard.obj" scale="1.0"/>
                 <material name="Hull"/>
@@ -144,7 +160,7 @@
 
         <actuator name="fin_port" type="rudder">
             <!-- inverted: pitch fin, same as starboard (see above). -->
-            <specs area="0.0080" lift_coeff="6.0" drag_coeff="0.9" max_angle="0.45" stall_angle="0.6" max_angular_rate="5.24" inverted="true"/>
+            <specs area="0.0080" lift_coeff="24.0" drag_coeff="0.9" max_angle="0.45" stall_angle="0.6" max_angular_rate="5.24" inverted="true"/>
             <visual>
                 <mesh filename="lauv_fin_port.obj" scale="1.0"/>
                 <material name="Hull"/>
@@ -198,6 +214,6 @@
             <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
         </sensor>
 
-        <world_transform xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+        <world_transform xyz="$(arg pos_n) $(arg pos_e) 0.0" rpy="0.0 0.0 $(arg pos_yaw)"/>
     </robot>
 </scenario>
