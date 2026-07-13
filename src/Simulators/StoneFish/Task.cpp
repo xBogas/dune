@@ -27,6 +27,14 @@
 // Author: João Bogas                                                       *
 //***************************************************************************
 
+// C++ headers.
+#include <cstdlib>
+#include <map>
+#include <memory>
+#include <set>
+#include <string>
+#include <vector>
+
 // DUNE headers.
 #include <DUNE/DUNE.hpp>
 
@@ -72,12 +80,36 @@ namespace Simulators
     {
       //! Scenario file path.
       std::string scenario;
-      //! Name of the robot to control.
-      std::string robot;
+      //! Graphical interface resolution [px], as a {width, height} pair.
+      std::vector<unsigned> graphics_resolution;
       //! Enable graphical interface.
       bool graphics;
       //! Simulation frequency.
       double frequency;
+      //! Fixed time step per simulation update [s] (0 = real time).
+      double time_step;
+      //! Automatically start the simulation after initialization.
+      bool auto_start;
+      //! Automatically step the simulation.
+      bool auto_step;
+      //! Synchronize rendering to the display refresh rate (graphical only).
+      bool vsync;
+      //! Render quality of each graphical effect (Disabled/Low/Medium/High).
+      std::string rq_shadows;
+      std::string rq_ao;
+      std::string rq_atmosphere;
+      std::string rq_ocean;
+      std::string rq_aa;
+      std::string rq_ssr;
+      //! Debug overlays drawn by the graphical interface.
+      bool show_coord_sys;
+      bool show_joints;
+      bool show_actuators;
+      bool show_sensors;
+      bool show_fluid_dynamics;
+      bool show_ocean_velocity;
+      bool show_forces;
+      bool show_bullet_debug;
       //! Actuator feedback frequency.
       double feedback_frequency;
       //! Dump per-link dynamics once, when the scenario is built.
@@ -92,20 +124,77 @@ namespace Simulators
       bool body_lift;
     };
 
+    //! Translate a configuration string to a Stonefish render quality level.
+    //! Case-insensitive; throws on an unrecognized value.
+    static sf::RenderQuality
+    parseRenderQuality(const std::string& value)
+    {
+      std::string v = String::trim(value);
+      String::toLowerCase(v);
+      if (v == "disabled")
+        return sf::RenderQuality::DISABLED;
+      if (v == "low")
+        return sf::RenderQuality::LOW;
+      if (v == "medium")
+        return sf::RenderQuality::MEDIUM;
+      if (v == "high")
+        return sf::RenderQuality::HIGH;
+
+      throw std::runtime_error("invalid render quality '" + value
+                               + "' (expected Disabled/Low/Medium/High)");
+    }
+
+    //! A robot of the scenario, exposed to the IMC bus as one system.
+    //!
+    //! Each simulated vehicle is a distinct IMC system: its sensor and state
+    //! messages are dispatched from its own system id (and, for sensors, the
+    //! entity id the vehicle announces in its EntityList), and actuator
+    //! commands are routed to it by their source system id.
+    struct SimVehicle
+    {
+      //! Robot wrapper, valid once the scenario is built.
+      std::shared_ptr<Vehicle> vehicle;
+      //! Ground truth state, stamped with this vehicle's system id.
+      IMC::SimulatedState sstate;
+      //! Scenario robot name (the IMC system name of the represented vehicle).
+      std::string name;
+      //! IMC system id this vehicle's data is dispatched from (0 if unresolved).
+      uint32_t system_id;
+      //! True once this vehicle's EntityList has been translated.
+      bool bound;
+      //! True once this vehicle's state has been flagged as divergent.
+      bool diverged;
+
+      SimVehicle(void):
+        system_id(0),
+        bound(false),
+        diverged(false)
+      { }
+    };
+
     struct Task: public DUNE::Tasks::Task
     {
       //! Resolved path to the scenario file.
       Path m_scenario;
       //! Simulation engine.
       Engine* m_engine;
-      //! Controlled robot, valid once the scenario is built.
-      std::shared_ptr<Vehicle> m_vehicle;
+      //! Simulated vehicles, one per robot of the scenario.
+      std::vector<std::shared_ptr<SimVehicle>> m_vehicles;
+      //! Robot name to simulated vehicle, for EntityList translation.
+      std::map<std::string, std::shared_ptr<SimVehicle>> m_by_name;
+      //! System id to simulated vehicle, for routing inbound commands.
+      std::map<uint32_t, std::shared_ptr<SimVehicle>> m_by_system;
+      //! Local (or first) vehicle, used for actuator feedback fallback and
+      //! the simulation trace.
+      std::shared_ptr<SimVehicle> m_primary;
       //! Device name (lauv/imu) to system and entity ids.
       DeviceMap m_eids;
       //! Translates Stonefish sensors into IMC messages.
       SensorBridge m_bridge;
-      //! Ground truth state, with origin set when the scenario is built.
-      IMC::SimulatedState m_sstate;
+      //! Geodetic origin of the scenario NED frame, set when it is built.
+      double m_origin_lat;
+      double m_origin_lon;
+      double m_origin_height;
       //! Actuator feedback timer.
       Time::Counter<double> m_feedback_timer;
       //! True once the simulation has been flagged as divergent.
@@ -128,7 +217,9 @@ namespace Simulators
         DUNE::Tasks::Task(name, ctx),
         m_engine(nullptr),
         m_bridge(this),
-        m_diverged(false),
+        m_origin_lat(0.0),
+        m_origin_lon(0.0),
+        m_origin_height(0.0),
         m_bodylift(false)
       {
         param("Scenario Path", m_args.scenario)
@@ -143,6 +234,94 @@ namespace Simulators
           .defaultValue("100.0")
           .units(Units::Hertz)
           .description("Physics steps per second of simulated time.");
+
+        param("Time Step", m_args.time_step)
+          .defaultValue("0.0")
+          .units(Units::Second)
+          .description("Fixed time step advanced on each simulation update. "
+                       "0 runs in real time.");
+
+        param("Auto Start", m_args.auto_start)
+          .defaultValue("true")
+          .description("Start the simulation automatically after initialization.");
+
+        param("Auto Step", m_args.auto_step)
+          .defaultValue("true")
+          .description("Step the simulation automatically.");
+
+        // --- graphical only (ignored in console mode) ---
+        param("Graphics Resolution", m_args.graphics_resolution)
+          .defaultValue("1280, 720")
+          .description("Window resolution of the graphical interface, as a "
+                       "width, height pair in pixels. Ignored in console mode.");
+
+        param("Vertical Sync", m_args.vsync)
+          .defaultValue("false")
+          .description("Synchronize rendering to the display refresh rate. "
+                       "Graphical mode only.");
+
+        param("Render Quality -- Shadows", m_args.rq_shadows)
+          .defaultValue("Medium")
+          .values("Disabled, Low, Medium, High")
+          .description("Shadow rendering quality. Graphical mode only.");
+
+        param("Render Quality -- Ambient Occlusion", m_args.rq_ao)
+          .defaultValue("Medium")
+          .values("Disabled, Low, Medium, High")
+          .description("Ambient occlusion rendering quality. Graphical mode only.");
+
+        param("Render Quality -- Atmosphere", m_args.rq_atmosphere)
+          .defaultValue("Medium")
+          .values("Disabled, Low, Medium, High")
+          .description("Atmosphere rendering quality. Graphical mode only.");
+
+        param("Render Quality -- Ocean", m_args.rq_ocean)
+          .defaultValue("Medium")
+          .values("Disabled, Low, Medium, High")
+          .description("Ocean rendering quality. Graphical mode only.");
+
+        param("Render Quality -- Anti-Aliasing", m_args.rq_aa)
+          .defaultValue("Medium")
+          .values("Disabled, Low, Medium, High")
+          .description("Anti-aliasing rendering quality. Graphical mode only.");
+
+        param("Render Quality -- SSR", m_args.rq_ssr)
+          .defaultValue("Medium")
+          .values("Disabled, Low, Medium, High")
+          .description("Screen-space reflections quality. Graphical mode only.");
+
+        // --- debug overlays (graphical only) ---
+        param("Show Coordinate Systems", m_args.show_coord_sys)
+          .defaultValue("false")
+          .description("Draw coordinate system frames. Graphical mode only.");
+
+        param("Show Joints", m_args.show_joints)
+          .defaultValue("false")
+          .description("Draw joint markers. Graphical mode only.");
+
+        param("Show Actuators", m_args.show_actuators)
+          .defaultValue("false")
+          .description("Draw actuator markers. Graphical mode only.");
+
+        param("Show Sensors", m_args.show_sensors)
+          .defaultValue("false")
+          .description("Draw sensor markers. Graphical mode only.");
+
+        param("Show Fluid Dynamics", m_args.show_fluid_dynamics)
+          .defaultValue("false")
+          .description("Draw hydrodynamic force vectors. Graphical mode only.");
+
+        param("Show Ocean Velocity Field", m_args.show_ocean_velocity)
+          .defaultValue("false")
+          .description("Draw the ocean current velocity field. Graphical mode only.");
+
+        param("Show Forces", m_args.show_forces)
+          .defaultValue("false")
+          .description("Draw applied force vectors. Graphical mode only.");
+
+        param("Show Bullet Debug Info", m_args.show_bullet_debug)
+          .defaultValue("false")
+          .description("Draw the Bullet physics debug overlay. Graphical mode only.");
 
         param("Feedback Frequency", m_args.feedback_frequency)
           .defaultValue("10.0")
@@ -201,6 +380,24 @@ namespace Simulators
       }
 
       void
+      validateGraphics(void)
+      {
+        if (m_args.graphics_resolution.size() != 2)
+          throw RestartNeeded("Invalid parameter 'Graphics Resolution': expected "
+                              "two values (width, height)",
+                              5);
+
+        try
+        {
+          renderSettings();
+        }
+        catch (const std::exception& e)
+        {
+          throw RestartNeeded(std::string("Invalid parameter 'Render Quality': ") + e.what(), 5);
+        }
+      }
+
+      void
       validateBodyLift(void)
       {
         Parsers::Config& cfg = m_ctx.config;
@@ -226,17 +423,69 @@ namespace Simulators
         if (!m_recorder.isOpen())
           m_recorder.open(m_current_log, m_args.log_sim_hz);
 
+        validateGraphics();
         validateBodyLift();
         validateScenario();
+
+        // Stonefish consumes these once, at SimulationApp construction, and the
+        // running simulation cannot be reconfigured (the GL window in
+        // particular). Rebuild the engine cleanly if any of them changes.
+        if (m_engine != nullptr
+            && (paramChanged(m_args.graphics) || paramChanged(m_args.frequency)
+                || paramChanged(m_args.time_step) || paramChanged(m_args.auto_start)
+                || paramChanged(m_args.auto_step) || paramChanged(m_args.graphics_resolution)
+                || paramChanged(m_args.vsync) || paramChanged(m_args.rq_shadows)
+                || paramChanged(m_args.rq_ao) || paramChanged(m_args.rq_atmosphere)
+                || paramChanged(m_args.rq_ocean) || paramChanged(m_args.rq_aa)
+                || paramChanged(m_args.rq_ssr) || paramChanged(m_args.show_coord_sys)
+                || paramChanged(m_args.show_joints) || paramChanged(m_args.show_actuators)
+                || paramChanged(m_args.show_sensors) || paramChanged(m_args.show_fluid_dynamics)
+                || paramChanged(m_args.show_ocean_velocity) || paramChanged(m_args.show_forces)
+                || paramChanged(m_args.show_bullet_debug)))
+          throw RestartNeeded("simulation settings changed, rebuilding", 1);
       }
 
-      //! Reserve one entity per device declared in the scenario, so that
-      //! each sensor and actuator dispatches from its own entity.
+      //! True if a scenario device belongs to the simulator's own vehicle, so
+      //! its entity is reserved locally. Devices of other robots are remote
+      //! systems: their ids are learned from the EntityList they announce.
+      //! The single-robot reference config (where the robot name need not match
+      //! the system name) always counts as local.
+      bool
+      isLocalDevice(const Scenario::Device& device) const
+      {
+        return device.robot == getSystemName();
+      }
+
+      void
+      reserveLocalEntity(const Scenario::Device& sensor)
+      {
+        try
+        {
+          Entities::StatefulEntity* entity = reserveEntity<Entities::StatefulEntity>(sensor.name);
+          m_eids[sensor.fullName()] = { getSystemId(), entity->getId() };
+
+          // TODO: Simulate state when dispatching data from device
+          //? Add option to disable data device -> stop dispatching data -> state go idle
+          // TODO: Dispatch date depending on device state (service, maneuver)
+          entity->setState(IMC::EntityState::ESTA_BOOT, Status::CODE_INIT);
+          entity->setState(IMC::EntityState::ESTA_NORMAL, Status::CODE_ACTIVE);
+
+          debug("reserved system (%s) entity '%s' (%s)", sensor.robot.c_str(), sensor.name.c_str(),
+                sensor.type.c_str());
+        }
+        catch (const std::exception& e)
+        {
+          war("failed to reserve entity '%s': %s", sensor.name.c_str(), e.what());
+        }
+      }
+
+      //! Reserve one entity per local device declared in the scenario, so that
+      //! each sensor and actuator dispatches from its own entity. Devices of
+      //! other simulated vehicles are translated from their EntityList instead.
       void
       onEntityReservation(void)
       {
         std::vector<Scenario::Device> devices;
-
         try
         {
           devices = Scenario::scan(m_scenario.str());
@@ -249,28 +498,29 @@ namespace Simulators
 
         for (const Scenario::Device& device : devices)
         {
-          // TODO: If device robot name != run as distributed simulation system
-          // (should have an EntityList of simulated vehicle)
-
-          try
+          if (isLocalDevice(device))
           {
-            Entities::StatefulEntity* entity = reserveEntity<Entities::StatefulEntity>(device.name);
-            m_eids[device.fullName()] = { getSystemId() /* resolveSystemName(device.robot) */,
-                                          entity->getId() };
-
-            // TODO: Simulate state when dispatching data from device
-            //? Add option to disable data device -> stop dispatching data -> state go idle
-            // TODO: Dispatch date depending on device state (service, maneuver)
-            entity->setState(IMC::EntityState::ESTA_BOOT, Status::CODE_INIT);
-            entity->setState(IMC::EntityState::ESTA_NORMAL, Status::CODE_ACTIVE);
-
-            debug("reserved system (%s) entity '%s' (%s)", device.robot.c_str(),
-                  device.name.c_str(), device.type.c_str());
+            reserveLocalEntity(device);
+            continue;
           }
-          catch (const std::exception& e)
+
+          // Remote vehicle: its entities live on another system. Seed the
+          // system id (resolved by name now, e.g. from the address book) so
+          // sensor data is at least attributed to the right vehicle; the
+          // entity id is refined when the vehicle announces its EntityList.
+          unsigned id = resolveSystemName(device.robot);
+          if (!IMC::AddressResolver::isValid(id))
           {
-            war("failed to reserve entity '%s': %s", device.name.c_str(), e.what());
+            war("unresolved system '%s' for device '%s'", device.robot.c_str(),
+                device.name.c_str());
+            continue;
           }
+
+          m_eids[device.fullName()] = { id, DUNE_IMC_CONST_UNK_EID };
+
+          debug("device '%s' belongs to remote vehicle '%s', will translate "
+                "from its EntityList",
+                device.name.c_str(), device.robot.c_str());
         }
       }
 
@@ -303,33 +553,167 @@ namespace Simulators
         }
       }
 
+      //! Resolve the simulated vehicle an inbound command is addressed to,
+      //! from the source system id of the command. With a single simulated
+      //! vehicle the command is always routed to it (a co-located vehicle
+      //! commanding the simulator keeps working); with several vehicles the
+      //! source must match a known system (learned from its EntityList).
+      Vehicle*
+      routeVehicle(uint32_t source)
+      {
+        std::map<uint32_t, std::shared_ptr<SimVehicle>>::const_iterator itr =
+          m_by_system.find(source);
+        if (itr != m_by_system.end())
+          return itr->second->vehicle.get();
+
+        if (m_vehicles.size() == 1 && m_primary != nullptr)
+          return m_primary->vehicle.get();
+
+        return nullptr;
+      }
+
       void
       consume(const IMC::SetThrusterActuation* msg)
       {
-        // TODO: route source/destination to simulated system
-        if (m_vehicle != nullptr)
-          m_vehicle->setThrust(msg->id, msg->value);
+        Vehicle* vehicle = routeVehicle(msg->getSource());
+        if (vehicle != nullptr)
+          vehicle->setThrust(msg->id, msg->value);
       }
 
       void
       consume(const IMC::SetServoPosition* msg)
       {
-        if (m_vehicle != nullptr)
-          m_vehicle->setServo(msg->id, msg->value);
+        Vehicle* vehicle = routeVehicle(msg->getSource());
+        if (vehicle != nullptr)
+          vehicle->setServo(msg->id, msg->value);
       }
 
+      //! Translate the ids a simulated vehicle announces into the dispatch
+      //! mapping. Each of the vehicle's devices (robot/sensor) is bound to the
+      //! vehicle's system id and the entity id it reports, so its sensor data
+      //! is dispatched as coming from the vehicle itself (e.g. "lauv-1/imu" ->
+      //! source lauv-1, the vehicle's imu entity). The system id is recorded so
+      //! the vehicle's actuator commands route back to its robot.
+      void
+      consume(const IMC::EntityList* msg)
+      {
+        if (msg->getSource() == getSystemId())
+          return;
+
+        if (msg->op != IMC::EntityList::OP_REPORT)
+          return;
+
+        const uint32_t src = msg->getSource();
+        const std::string sys = resolveSystemId(src);
+
+        std::map<std::string, std::shared_ptr<SimVehicle>>::iterator itr = m_by_name.find(sys);
+        if (itr == m_by_name.end())
+          return;  // Not the EntityList of a simulated robot.
+
+        std::shared_ptr<SimVehicle> sv = itr->second;
+
+        if (sv->system_id != src)
+        {
+          sv->system_id = src;
+          m_by_system[src] = sv;
+          inf("vehicle '%s' bound to system %u", sv->name.c_str(), src);
+        }
+
+        TupleList tuples(msg->list);
+        const std::map<std::string, std::string> entities = tuples.getMap();
+        for (std::map<std::string, std::string>::const_iterator eit = entities.begin();
+             eit != entities.end(); ++eit)
+        {
+          const std::string dev = sv->name + "/" + eit->first;
+          const DeviceInfo info = { src, (uint32_t)std::strtoul(eit->second.c_str(), nullptr, 10) };
+          m_eids[dev] = info;
+          m_bridge.setEntity(dev, info);
+        }
+
+        sv->bound = true;
+      }
+
+      //! Query the EntityList of simulated vehicles that have not announced
+      //! their entities yet, so vehicles running on other DUNE nodes are
+      //! bound without manual action: the Daemon of each vehicle answers
+      //! with a report addressed back to this system. Vehicles whose system
+      //! is still unresolved (not in the address book, no Announce seen) are
+      //! queried with a broadcast.
+      void
+      queryEntities(void)
+      {
       //! Resolve device name (robot/sensor) to reserved entity id,
       //! or return the task entity if not found.
+        for (const std::shared_ptr<SimVehicle>& sv : m_vehicles)
+        {
+          if (sv->bound || sv == m_primary)
+            continue;
+
+          if (sv->system_id == 0)
+          {
+            broadcast = true;
+            continue;
+          }
+
+          IMC::EntityList query;
+          query.op = IMC::EntityList::OP_QUERY;
+          query.setDestination(sv->system_id);
+          dispatch(query);
+          trace("querying entities of vehicle '%s'", sv->name.c_str());
+        }
+
+        if (broadcast)
+        {
+          IMC::EntityList query;
+          query.op = IMC::EntityList::OP_QUERY;
+          dispatch(query);
+        }
+      }
+
+      //! Resolve a device (robot/actuator) of a vehicle to the system and
+      //! entity id its feedback is dispatched from. Falls back to the
+      //! vehicle's system (and the task entity) when the device has no
+      //! reserved or announced entity.
       DeviceInfo
-      resolveDevice(const std::string& dev_name)
+      resolveDevice(const SimVehicle& sv, const std::string& dev_name)
       {
         DeviceMap::const_iterator itr = m_eids.find(dev_name);
         if (itr != m_eids.end())
           return itr->second;
 
-        DeviceInfo info = { getSystemId(), getEntityId() };
-        m_eids[dev_name] = info;
-        return info;
+        return { sv.system_id != 0 ? sv.system_id : getSystemId(), getEntityId() };
+      }
+
+      //! Wrap a robot of the scenario as a simulated vehicle and register it in
+      //! the lookup maps. The vehicle whose name matches this system (or the
+      //! only robot of the scenario) is the local one and dispatches from this
+      //! system id; the others are remote systems, resolved by name now and
+      //! refined when their EntityList arrives.
+      void
+      addVehicle(sf::Robot* robot)
+      {
+        std::shared_ptr<SimVehicle> sv = std::make_shared<SimVehicle>();
+        sv->vehicle = std::make_shared<Vehicle>(robot);
+        sv->name = sv->vehicle->getName();
+
+        sv->sstate.lat = Angles::radians(m_origin_lat);
+        sv->sstate.lon = Angles::radians(m_origin_lon);
+        sv->sstate.height = m_origin_height;
+
+        unsigned id = resolveSystemName(sv->name);
+        sv->system_id = id;
+
+        m_vehicles.push_back(sv);
+        m_by_name[sv->name] = sv;
+        if (sv->system_id != 0)
+          m_by_system[sv->system_id] = sv;
+
+        if (sv->name == getSystemName())
+          m_primary = sv;
+
+        inf("simulating vehicle '%s'%s%s", sv->name.c_str(),
+            sv->name == getSystemName() ? " (local)" : "",
+            sv->system_id != 0 ? "" : " (awaiting EntityList)");
       }
 
       //! Collect the resources of the built scenario: the robot to
@@ -340,41 +724,30 @@ namespace Simulators
       {
         consumeMessages();
 
-        sf::Robot* robot = nullptr;
-        robot = sim.getRobot(getSystemName());
-        if (robot == nullptr)
-        {
-          war("robot '%s' not found in scenario, using the first one", getSystemName());
-          robot = sim.getRobot(0u);
-        }
-
-        sf::Ocean* ocean = sim.getOcean();
-        const double water_density = ocean != nullptr ? ocean->getLiquid().density : 1000.0;
-
-        if (robot != nullptr)
-        {
-          m_vehicle = std::make_shared<Vehicle>(robot);
-          inf("controlling robot '%s'", m_vehicle->getName().c_str());
-
-          if (m_args.dump_dynamics)
-            m_vehicle->logDynamics(water_density);
-        }
-        else
-        {
-          war("scenario has no robot, only sensors will be dispatched");
-        }
-
         // The scenario NED origin is the geodetic reference of all
         // positions dispatched by this task.
         sf::Scalar lat, lon, height;
         sim.getNED()->Ned2Geodetic(0, 0, 0, lat, lon, height);
-        m_sstate.lat = Angles::radians(lat);
-        m_sstate.lon = Angles::radians(lon);
-        m_sstate.height = height;
+        m_origin_lat = lat;
+        m_origin_lon = lon;
+        m_origin_height = height;
 
-        if (m_vehicle != nullptr)
+        sf::Ocean* ocean = sim.getOcean();
+        const double water_density = ocean != nullptr ? ocean->getLiquid().density : 1000.0;
+
+        for (unsigned i = 0; sim.getRobot(i) != nullptr; i++)
+          addVehicle(sim.getRobot(i));
+
+        if (m_vehicles.empty())
+          war("scenario has no robot, only sensors will be dispatched");
+
+        for (const std::shared_ptr<SimVehicle>& sv : m_vehicles)
         {
-          logBuild(*m_vehicle, water_density, lat, lon, height);
+          if (m_args.dump_dynamics)
+          {
+            sv->vehicle->logDynamics(water_density);
+            logBuild(*sv->vehicle, water_density, lat, lon, height);
+          }
         }
 
         m_bridge.bind(sim, m_eids);
@@ -408,20 +781,25 @@ namespace Simulators
 
         m_bridge.poll();
 
-        if (m_vehicle == nullptr)
+        if (m_vehicles.empty())
           return;
 
-        m_vehicle->applySetpoints();
-        dispatchState(sim);
+        queryEntities();
 
-        if (m_feedback_timer.overflow())
-        {
+        const bool feedback = m_feedback_timer.overflow();
+        if (feedback)
           m_feedback_timer.reset();
-          dispatchFeedback();
+
+        for (const std::shared_ptr<SimVehicle>& sv : m_vehicles)
+        {
+          sv->vehicle->applySetpoints();
+          dispatchState(sim, *sv);
+          if (feedback)
+            dispatchFeedback(*sv);
         }
 
-        if (m_recorder.isOpen())
-          m_recorder.logStep(sim.getSimulationTime(), *m_vehicle);
+        if (m_recorder.isOpen() && m_primary != nullptr)
+          m_recorder.logStep(sim.getSimulationTime(), *m_primary->vehicle);
       }
 
       //! Apply the hull body-lift force/moment for the current state.
@@ -430,8 +808,11 @@ namespace Simulators
       void
       onPreTick(sf::SimulationManager&)
       {
-        if (m_vehicle != nullptr && m_bodylift)
-          m_vehicle->applyBodyLift(m_bodylift_coef);
+        if (!m_bodylift)
+          return;
+
+        for (const std::shared_ptr<SimVehicle>& sv : m_vehicles)
+          sv->vehicle->applyBodyLift(m_bodylift_coef);
       }
 
       //! Dispatch the ground truth state of the robot.
@@ -447,7 +828,7 @@ namespace Simulators
       //! occurrence report the offending values and the simulation time and
       //! mark the entity in error. Returns false once the state is bad
       bool
-      stateIsSane(const Vehicle::State& s, double t)
+      stateIsSane(SimVehicle& sv, const Vehicle::State& s, double t)
       {
         const double v = s.linearVelocity.length();
         const double w = s.angularVelocity.length();
@@ -460,81 +841,139 @@ namespace Simulators
         if (finite && !fast)
           return true;
 
-        if (!m_diverged)
+        if (!sv.diverged)
         {
-          m_diverged = true;
-          err("simulation diverged at t=%.3f s: |v|=%g m/s, |w|=%g rad/s%s "
+          sv.diverged = true;
+          err("vehicle '%s' diverged at t=%.3f s: |v|=%g m/s, |w|=%g rad/s%s "
               "(position [%g, %g, %g])",
-              t, v, w, finite ? "" : ", NaN/Inf", s.position.x(), s.position.y(), s.position.z());
+              sv.name.c_str(), t, v, w, finite ? "" : ", NaN/Inf", s.position.x(), s.position.y(),
+              s.position.z());
           setEntityState(IMC::EntityState::ESTA_ERROR, "simulation diverged");
         }
         return false;
       }
 
       void
-      dispatchState(sf::SimulationManager& sim)
+      dispatchState(sf::SimulationManager& sim, SimVehicle& sv)
       {
-        const Vehicle::State state = m_vehicle->getState();
+        const Vehicle::State state = sv.vehicle->getState();
 
-        if (!stateIsSane(state, sim.getSimulationTime()))
+        if (!stateIsSane(sv, state, sim.getSimulationTime()))
           return;
 
+        // Not yet bound to an IMC system (no EntityList / Announce seen);
+        // dispatching with an unknown source would mislabel the data.
+        if (sv.system_id == 0)
+          return;
+
+        IMC::SimulatedState& ss = sv.sstate;
+
         // TODO: Update lat, lon if vehicle goes far from origin
-        m_sstate.x = state.position.x();
-        m_sstate.y = state.position.y();
-        m_sstate.z = state.position.z();
+        ss.x = state.position.x();
+        ss.y = state.position.y();
+        ss.z = state.position.z();
 
-        m_sstate.phi = Angles::normalizeRadian(state.orientation.x());
-        m_sstate.theta = Angles::normalizeRadian(state.orientation.y());
-        m_sstate.psi = Angles::normalizeRadian(state.orientation.z());
+        ss.phi = Angles::normalizeRadian(state.orientation.x());
+        ss.theta = Angles::normalizeRadian(state.orientation.y());
+        ss.psi = Angles::normalizeRadian(state.orientation.z());
 
-        m_sstate.u = state.linearVelocity.x();
-        m_sstate.v = state.linearVelocity.y();
-        m_sstate.w = state.linearVelocity.z();
+        ss.u = state.linearVelocity.x();
+        ss.v = state.linearVelocity.y();
+        ss.w = state.linearVelocity.z();
 
-        m_sstate.p = state.angularVelocity.x();
-        m_sstate.q = state.angularVelocity.y();
-        m_sstate.r = state.angularVelocity.z();
+        ss.p = state.angularVelocity.x();
+        ss.q = state.angularVelocity.y();
+        ss.r = state.angularVelocity.z();
 
         sf::Ocean* ocean = sim.getOcean();
         if (ocean != nullptr)
         {
           const sf::Vector3 stream = ocean->GetFluidVelocity(state.position);
-          m_sstate.svx = stream.x();
-          m_sstate.svy = stream.y();
-          m_sstate.svz = stream.z();
+          ss.svx = stream.x();
+          ss.svy = stream.y();
+          ss.svz = stream.z();
         }
 
-        dispatch(m_sstate);
+        ss.setSource(sv.system_id);
+        ss.setSourceEntity(getEntityId());
+        ss.setDestination(sv.system_id);
+        dispatch(ss, Tasks::DF_KEEP_SRC_EID);
       }
 
-      //! Dispatch actuator feedback: Rpm for each rotating thrust
-      //! actuator and ServoPosition for each servo.
+      //! Dispatch actuator feedback for one vehicle: Rpm for each rotating
+      //! thrust actuator and ServoPosition for each servo, stamped with the
+      //! vehicle's system id.
       void
-      dispatchFeedback(void)
+      dispatchFeedback(SimVehicle& sv)
       {
-        for (size_t i = 0; i < m_vehicle->getThrusterCount(); i++)
+        if (sv.system_id == 0)
+          return;
+
+        Vehicle& vehicle = *sv.vehicle;
+
+        for (size_t i = 0; i < vehicle.getThrusterCount(); i++)
         {
           double rpm;
-          if (!m_vehicle->getThrusterRpm(i, rpm))
+          if (!vehicle.getThrusterRpm(i, rpm))
             continue;
 
           IMC::Rpm msg;
           msg.value = (int16_t)std::lround(rpm);
 
-          DeviceInfo info = resolveDevice(m_vehicle->getThrusterName(i));
+          DeviceInfo info = resolveDevice(sv, vehicle.getThrusterName(i));
           msg.setSource(info.system_id);
           msg.setSourceEntity(info.entity_id);
+          msg.setDestination(info.system_id);
           dispatch(msg, Tasks::DF_KEEP_SRC_EID);
         }
 
-        for (size_t i = 0; i < m_vehicle->getServoCount(); i++)
+        for (size_t i = 0; i < vehicle.getServoCount(); i++)
         {
           IMC::ServoPosition msg;
           msg.id = i;
-          msg.value = m_vehicle->getServoPosition(i);
-          dispatch(msg);
+          msg.value = vehicle.getServoPosition(i);
+
+          DeviceInfo info = resolveDevice(sv, vehicle.getServoName(i));
+          msg.setSource(info.system_id);
+          msg.setSourceEntity(info.entity_id);
+          msg.setDestination(info.system_id);
+          dispatch(msg, Tasks::DF_KEEP_SRC_EID);
         }
+      }
+
+      //! Build the Stonefish render settings from the configuration.
+      //! Only consumed in graphical mode.
+      sf::RenderSettings
+      renderSettings(void) const
+      {
+        sf::RenderSettings r;
+        r.windowW = (GLint)m_args.graphics_resolution.at(0);
+        r.windowH = (GLint)m_args.graphics_resolution.at(1);
+        r.verticalSync = m_args.vsync;
+        r.shadows = parseRenderQuality(m_args.rq_shadows);
+        r.ao = parseRenderQuality(m_args.rq_ao);
+        r.atmosphere = parseRenderQuality(m_args.rq_atmosphere);
+        r.ocean = parseRenderQuality(m_args.rq_ocean);
+        r.aa = parseRenderQuality(m_args.rq_aa);
+        r.ssr = parseRenderQuality(m_args.rq_ssr);
+        return r;
+      }
+
+      //! Build the Stonefish helper (debug overlay) settings from the
+      //! configuration. Only consumed in graphical mode.
+      sf::HelperSettings
+      helperSettings(void) const
+      {
+        sf::HelperSettings h;
+        h.showCoordSys = m_args.show_coord_sys;
+        h.showJoints = m_args.show_joints;
+        h.showActuators = m_args.show_actuators;
+        h.showSensors = m_args.show_sensors;
+        h.showFluidDynamics = m_args.show_fluid_dynamics;
+        h.showOceanVelocityField = m_args.show_ocean_velocity;
+        h.showForces = m_args.show_forces;
+        h.showBulletDebugInfo = m_args.show_bullet_debug;
+        return h;
       }
 
       //! Run the simulation until it terminates. Stonefish steps the
@@ -551,8 +990,9 @@ namespace Simulators
         simCallback onBuildCb = std::bind(&Task::onBuild, this, std::placeholders::_1);
         simCallback onPreTickCb = std::bind(&Task::onPreTick, this, std::placeholders::_1);
 
-        m_engine = new Engine(mode, m_scenario, m_args.frequency, onStepCb, onBuildCb, onPreTickCb);
-        m_engine->start();
+        m_engine = new Engine(mode, m_scenario, m_args.frequency, renderSettings(),
+                              helperSettings(), onStepCb, onBuildCb, onPreTickCb);
+        m_engine->start(m_args.auto_step, m_args.time_step, m_args.auto_start);
       }
 
       //! Main loop.

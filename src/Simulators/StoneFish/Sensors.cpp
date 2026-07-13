@@ -63,10 +63,12 @@ namespace Simulators
     { }
 
     void
-    SensorBridge::bind(sf::SimulationManager& sim,
-                       const DeviceMap& entities)
+    SensorBridge::bind(sf::SimulationManager& sim, const DeviceMap& entities)
     {
-      m_entities = entities;
+      {
+        std::lock_guard<std::mutex> lock(m_entities_mutex);
+        m_entities = entities;
+      }
 
       sf::Ocean* ocean = sim.getOcean();
       if (ocean != nullptr)
@@ -107,12 +109,22 @@ namespace Simulators
       }
     }
 
+    void
+    SensorBridge::setEntity(const std::string& dev_name, const DeviceInfo& info)
+    {
+      std::lock_guard<std::mutex> lock(m_entities_mutex);
+      m_entities[dev_name] = info;
+    }
+
     DeviceInfo
     SensorBridge::resolveDevice(const std::string& dev_name)
     {
-      DeviceMap::const_iterator itr = m_entities.find(dev_name);
-      if (itr != m_entities.end())
-        return itr->second;
+      {
+        std::lock_guard<std::mutex> lock(m_entities_mutex);
+        DeviceMap::const_iterator itr = m_entities.find(dev_name);
+        if (itr != m_entities.end())
+          return itr->second;
+      }
 
       warnOnce(dev_name, "no reserved entity, dispatching from task entity");
       return { m_task->getSystemId(), m_task->getEntityId() };
@@ -124,6 +136,7 @@ namespace Simulators
       DeviceInfo info = resolveDevice(dev_name);
       msg.setSource(info.system_id);
       msg.setSourceEntity(info.entity_id);
+      msg.setDestination(info.system_id);
       m_task->dispatch(msg, Tasks::DF_KEEP_SRC_EID);
     }
 

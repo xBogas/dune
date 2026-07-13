@@ -107,17 +107,26 @@ namespace Simulators
       //! @param[in] sim simulation manager with a built scenario.
       //! @param[in] entities sensor name to reserved entity id map.
       void
-      bind(sf::SimulationManager& sim,
-           const DeviceMap& entities);
+      bind(sf::SimulationManager& sim, const DeviceMap& entities);
 
       //! Translate fresh samples of all scalar sensors into IMC messages.
       //! Must be called from the simulation thread, on every step.
       void
       poll(void);
 
+      //! Bind (or rebind) a device name to a system and entity id, replacing
+      //! any previous mapping. Used to apply the ids a simulated vehicle
+      //! announces in its EntityList after the bridge has been bound, so its
+      //! sensor data is dispatched from the vehicle's own system and entity.
+      //! Thread-safe.
+      //! @param[in] dev_name device name (robot/sensor), as in the scenario.
+      //! @param[in] info system and entity id to dispatch the sensor from.
+      void
+      setEntity(const std::string& dev_name, const DeviceInfo& info);
+
     private:
       //! Resolve device name (robot/sensor) to system and entity id,
-      //! or return the task entity if not found.
+      //! or return the task entity if not found. Thread-safe.
       DeviceInfo
       resolveDevice(const std::string& dev_name);
 
@@ -187,8 +196,11 @@ namespace Simulators
 
       //! Parent task.
       DUNE::Tasks::Task* m_task;
-      //! Sensor name to entity id.
+      //! Sensor name to system and entity id.
       DeviceMap m_entities;
+      //! Guards m_entities (read on every step and from vision callbacks,
+      //! updated when a vehicle's EntityList is consumed).
+      std::mutex m_entities_mutex;
       //! Scalar sensors polled every step.
       std::vector<sf::ScalarSensor*> m_scalars;
       //! Water density used to derive depth from pressure [kg/m³].

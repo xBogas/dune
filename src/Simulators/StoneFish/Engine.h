@@ -46,7 +46,8 @@ namespace Simulators
     class Engine
     {
     public:
-      Engine(SimMode mode, const DUNE::FileSystem::Path& scn_fd, double freq, simCallback onStep,
+      Engine(SimMode mode, const DUNE::FileSystem::Path& scn_fd, double freq,
+             const sf::RenderSettings& render, const sf::HelperSettings& helper, simCallback onStep,
              simCallback onBuild, simCallback onPreTick):
         m_manager(nullptr),
         m_sim(nullptr)
@@ -62,15 +63,8 @@ namespace Simulators
             break;
 
           case SimMode::GRAPHICAL:
-          {
-            sf::RenderSettings r;
-            r.windowW = 1920;
-            r.windowH = 1080;
-            r.verticalSync = true;
-
-            m_sim = new GraphicalSim("DUNE sim", data_dir, r, sf::HelperSettings(), m_manager);
-          }
-          break;
+            m_sim = new GraphicalSim("DUNE sim", data_dir, render, helper, m_manager);
+            break;
         }
       }
 
