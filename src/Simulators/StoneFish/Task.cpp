@@ -642,8 +642,7 @@ namespace Simulators
       void
       queryEntities(void)
       {
-      //! Resolve device name (robot/sensor) to reserved entity id,
-      //! or return the task entity if not found.
+        bool broadcast = false;
         for (const std::shared_ptr<SimVehicle>& sv : m_vehicles)
         {
           if (sv->bound || sv == m_primary)
