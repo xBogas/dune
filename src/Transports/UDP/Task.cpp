@@ -382,6 +382,9 @@ namespace Transports
         if (m_filter.filter(msg))
           return;
 
+        const uint16_t dst = msg->getDestination();
+        const bool routed = dst != IMC::AddressResolver::invalid() && dst != getSystemId();
+
         if (m_args.trace_out)
           DUNE_MSG(getName(), "outgoing: " + std::string(msg->getName()));
 
@@ -408,11 +411,18 @@ namespace Transports
           { }
         }
 
-        if (m_args.dynamic_nodes)
-        {
-          // Send to dynamic nodes.
+        if (!m_args.dynamic_nodes)
+          return;
+
+        // Send to all dynamic nodes.
+        if (!routed) {
           m_node_table.send(m_sock, m_bfr, rv, msg->getId());
+          return;
         }
+
+        // Send to a specific dynamic node.
+        if (!m_node_table.sendTo(m_sock, m_bfr, rv, msg->getId(), dst))
+          trace("no node for destination %u of %s", dst, msg->getName());
       }
 
       void

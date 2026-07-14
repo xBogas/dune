@@ -59,6 +59,15 @@ namespace Transports
       void
       addNode(unsigned id, const std::string& name, const std::string& services)
       {
+        // A node may announce its local and external services in separate
+        // announcements: merge them so any of its addresses can activate.
+        Table::iterator itr = m_table.find(id);
+        if (itr != m_table.end())
+        {
+          itr->second.addServices(services);
+          return;
+        }
+
         m_table.insert(std::pair<unsigned, Node>(id, Node(name, services)));
       }
 
@@ -115,6 +124,22 @@ namespace Transports
 
         for (Table::iterator itr = m_table.begin(); itr != m_table.end(); ++itr)
           itr->second.send(sock, data, data_len);
+      }
+
+      //! Send data only to the node with the given system id.
+      //! @return true if the node is known and active, false otherwise.
+      bool
+      sendTo(UDPSocket& sock, const uint8_t* data, unsigned data_len, unsigned msgid, unsigned dst)
+      {
+        Table::iterator itr = m_table.find(dst);
+        if (itr == m_table.end() || !itr->second.isActive())
+          return false;
+
+        if (m_lcomms != NULL && m_lcomms->isActive() && !m_lcomms->isNodeWithinRange(dst, msgid))
+          return true;
+
+        itr->second.send(sock, data, data_len);
+        return true;
       }
 
       void

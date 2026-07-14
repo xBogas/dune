@@ -52,21 +52,7 @@ namespace Transports
         m_name(name),
         m_active(m_addrs.end())
       {
-        // Search for IMC + UDP services.
-        std::vector<std::string> list;
-        String::split(services, ";", list);
-
-        for (unsigned i = 0; i < list.size(); ++i)
-        {
-          if (list[i].compare(0, 10, "imc+udp://", 10) != 0)
-            continue;
-
-          unsigned port = 0;
-          char address[128] = {0};
-
-          if (std::sscanf(list[i].c_str(), "%*[^:]://%127[^:]:%u", address, &port) == 2)
-            m_addrs.insert(std::pair<Address, unsigned>(address, port));
-        }
+        addServices(services);
       }
 
       Node(const Node& node)
@@ -86,6 +72,37 @@ namespace Transports
       getName(void) const
       {
         return m_name;
+      }
+
+      //! Add the IMC + UDP services of an announcement to this node's
+      //! list of addresses. A node announces its local and external
+      //! services separately, so the addresses accumulate.
+      //! @param[in] services services string of an Announce message.
+      void
+      addServices(const std::string& services)
+      {
+        std::vector<std::string> list;
+        String::split(services, ";", list);
+
+        for (unsigned i = 0; i < list.size(); ++i)
+        {
+          if (list[i].compare(0, 10, "imc+udp://", 10) != 0)
+            continue;
+
+          unsigned port = 0;
+          char address[128] = {0};
+
+          if (std::sscanf(list[i].c_str(), "%*[^:]://%127[^:]:%u", address, &port) == 2)
+            m_addrs.insert(std::pair<Address, unsigned>(address, port));
+        }
+      }
+
+      //! Check if the node has an active address.
+      //! @return true if transmission to the node is active.
+      bool
+      isActive(void) const
+      {
+        return m_active != m_addrs.end();
       }
 
       //! Check if address and port are on this node's
