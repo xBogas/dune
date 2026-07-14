@@ -536,6 +536,8 @@ namespace DUNE
     void
     BasicNavigation::consume(const IMC::GpsFix* msg)
     {
+      if (msg->getSource() != getSystemId())
+        return;
 
       if (m_gps_disable== true)
         return;
