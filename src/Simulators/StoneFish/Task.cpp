@@ -112,6 +112,8 @@ namespace Simulators
       bool show_bullet_debug;
       //! Actuator feedback frequency.
       double feedback_frequency;
+      //! Period of the EntityList query sent to unbound vehicles [s].
+      double equery_period;
       //! Dump per-link dynamics once, when the scenario is built.
       bool dump_dynamics;
       //! Linear speed above which the state is flagged as divergent (0 off).
@@ -189,6 +191,10 @@ namespace Simulators
       std::shared_ptr<SimVehicle> m_primary;
       //! Device name (lauv/imu) to system and entity ids.
       DeviceMap m_eids;
+      //! Systems whose commands could not be routed, reported once each.
+      std::set<uint32_t> m_unrouted;
+      //! True once the configuration/scenario name mismatch was reported.
+      bool m_mismatch_warned;
       //! Translates Stonefish sensors into IMC messages.
       SensorBridge m_bridge;
       //! Geodetic origin of the scenario NED frame, set when it is built.
@@ -197,8 +203,8 @@ namespace Simulators
       double m_origin_height;
       //! Actuator feedback timer.
       Time::Counter<double> m_feedback_timer;
-      //! True once the simulation has been flagged as divergent.
-      bool m_diverged;
+      //! EntityList query timer.
+      Time::Counter<double> m_equery_timer;
       //! Resolved directory for the trace files.
       Path m_current_log;
       //! Writes the build snapshot and step trace.
@@ -216,6 +222,7 @@ namespace Simulators
       Task(const std::string& name, Tasks::Context& ctx):
         DUNE::Tasks::Task(name, ctx),
         m_engine(nullptr),
+        m_mismatch_warned(false),
         m_bridge(this),
         m_origin_lat(0.0),
         m_origin_lon(0.0),
@@ -328,6 +335,14 @@ namespace Simulators
           .units(Units::Hertz)
           .description("Frequency of actuator feedback (Rpm and ServoPosition).");
 
+        param("Entity Query Period", m_args.equery_period)
+          .defaultValue("5.0")
+          .units(Units::Second)
+          .description("Period of the EntityList query sent to simulated vehicles "
+                       "that have not announced their entities yet, so vehicles "
+                       "running on other DUNE nodes are bound without manual "
+                       "action. 0 disables the query.");
+
         param("Dump Dynamics", m_args.dump_dynamics)
           .defaultValue("true")
           .description("Log the per-link mass, inertia, added mass, volume and "
@@ -361,6 +376,8 @@ namespace Simulators
         bind<IMC::SetThrusterActuation>(this);
         bind<IMC::SetServoPosition>(this);
         bind<IMC::LoggingControl>(this);
+        bind<IMC::EntityList>(this);
+        bind<IMC::VehicleState>(this);
 
         m_current_log = m_ctx.dir_log / getSystemName();
       }
@@ -418,6 +435,7 @@ namespace Simulators
       onUpdateParameters(void)
       {
         m_feedback_timer.setTop(1.0 / m_args.feedback_frequency);
+        m_equery_timer.setTop(m_args.equery_period);
 
         m_recorder.setFrequency(m_args.log_sim_hz);
         if (!m_recorder.isOpen())
@@ -553,11 +571,25 @@ namespace Simulators
         }
       }
 
+      //! Comma-separated list of the scenario robot names, for diagnostics.
+      std::string
+      robotNames(void) const
+      {
+        std::string names;
+        for (const std::shared_ptr<SimVehicle>& sv : m_vehicles)
+          names += (names.empty() ? "'" : ", '") + sv->name + "'";
+        return names;
+      }
+
       //! Resolve the simulated vehicle an inbound command is addressed to,
       //! from the source system id of the command. With a single simulated
       //! vehicle the command is always routed to it (a co-located vehicle
       //! commanding the simulator keeps working); with several vehicles the
       //! source must match a known system (learned from its EntityList).
+      //! Commands that cannot be routed are dropped; the first drop per
+      //! system is reported, as commands from this very system mean the
+      //! co-located stack expects to be simulated but no scenario robot is
+      //! named after it — a configuration/scenario vehicle name mismatch.
       Vehicle*
       routeVehicle(uint32_t source)
       {
@@ -568,6 +600,23 @@ namespace Simulators
 
         if (m_vehicles.size() == 1 && m_primary != nullptr)
           return m_primary->vehicle.get();
+
+        // Commands queued before the scenario is built cannot be judged yet.
+        if (m_vehicles.empty())
+          return nullptr;
+
+        if (m_unrouted.insert(source).second)
+        {
+          if (source == getSystemId())
+            war("dropping actuator commands of this system: '%s' is not a "
+                "robot of the scenario (robots: %s) — vehicle name mismatch "
+                "between the configuration and the scenario file?",
+                getSystemName(), robotNames().c_str());
+          else
+            trace("ignoring actuator commands from '%s': not a robot of the "
+                  "scenario",
+                  resolveSystemId(source));
+        }
 
         return nullptr;
       }
@@ -586,6 +635,28 @@ namespace Simulators
         Vehicle* vehicle = routeVehicle(msg->getSource());
         if (vehicle != nullptr)
           vehicle->setServo(msg->id, msg->value);
+      }
+
+      //! Detect a vehicle name mismatch between the configuration and the
+      //! scenario file. A VehicleState from this very system means a vehicle
+      //! supervisor is co-located with the simulator, so this system expects
+      //! to be simulated — if no scenario robot is named after it, the
+      //! scenario drives another vehicle and the local stack is left blind.
+      //! A dedicated simulation node runs no supervisor and never warns.
+      void
+      consume(const IMC::VehicleState* msg)
+      {
+        if (m_mismatch_warned || msg->getSource() != getSystemId())
+          return;
+
+        if (m_vehicles.empty() || m_primary != nullptr)
+          return;
+
+        m_mismatch_warned = true;
+        war("this system '%s' runs a vehicle stack but is not a robot of the "
+            "scenario (robots: %s) — vehicle name mismatch between the "
+            "configuration and the scenario file?",
+            getSystemName(), robotNames().c_str());
       }
 
       //! Translate the ids a simulated vehicle announces into the dispatch
@@ -642,6 +713,11 @@ namespace Simulators
       void
       queryEntities(void)
       {
+        if (m_args.equery_period <= 0.0 || !m_equery_timer.overflow())
+          return;
+
+        m_equery_timer.reset();
+
         bool broadcast = false;
         for (const std::shared_ptr<SimVehicle>& sv : m_vehicles)
         {
@@ -739,6 +815,10 @@ namespace Simulators
 
         if (m_vehicles.empty())
           war("scenario has no robot, only sensors will be dispatched");
+        else if (m_primary == nullptr)
+          inf("this system is not a robot of the scenario (robots: %s); "
+              "acting as a dedicated simulation node",
+              robotNames().c_str());
 
         for (const std::shared_ptr<SimVehicle>& sv : m_vehicles)
         {
