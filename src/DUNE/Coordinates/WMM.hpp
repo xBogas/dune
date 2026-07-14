@@ -32,8 +32,13 @@
 #ifndef DUNE_COORDINATES_WMM_HPP_INCLUDED_
 #define DUNE_COORDINATES_WMM_HPP_INCLUDED_
 
+// ISO C++ 98 headers.
+#include <string>
+
+// DUNE headers.
 #include <DUNE/Config.hpp>
 #include <DUNE/FileSystem/Path.hpp>
+#include <DUNE/Time/BrokenDown.hpp>
 
 namespace DUNE
 {
@@ -60,8 +65,31 @@ namespace DUNE
       //! @param[in] root root path for searching WMM 2010 data files
       WMM(const FileSystem::Path& root);
 
+      //! Constructor.
+      //! WMM files will be searched within 'root/wmm' and the magnetic
+      //! model will be evaluated at the given date instead of the
+      //! current one.
+      //! @param[in] root root path for searching WMM data files
+      //! @param[in] date date at which the magnetic model is evaluated
+      WMM(const FileSystem::Path& root, const Time::BrokenDown& date);
+
+      //! Constructor.
+      //! Loads the given magnetic model ('root/wmm/<model>.cof'),
+      //! evaluated at the given date. An empty model name loads the
+      //! model with the most recent epoch available in 'root/wmm'.
+      //! @param[in] root root path for searching WMM data files
+      //! @param[in] date date at which the magnetic model is evaluated
+      //! @param[in] model coefficient file name, empty for latest model
+      WMM(const FileSystem::Path& root, const Time::BrokenDown& date,
+          const std::string& model);
+
       //! Destructor.
       ~WMM(void);
+
+      //! Get the name of the loaded magnetic model (e.g. "WMM-2015v2").
+      //! @return model name.
+      std::string
+      model(void) const;
 
       //! Returns the height of the EGM96 geoid above or below the WGS84 ellipsoid,
       //! at the specified geodetic coordinates.
@@ -81,7 +109,8 @@ namespace DUNE
 
     private:
       void
-      init(const FileSystem::Path& root);
+      init(const FileSystem::Path& root, const Time::BrokenDown& date,
+           const std::string& model);
 
       WMMData* m_data;
     };

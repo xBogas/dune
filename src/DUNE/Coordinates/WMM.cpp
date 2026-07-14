@@ -1,5 +1,5 @@
 //***************************************************************************
-// Copyright 2007-2026 Universidade do Porto - Faculdade de Engenharia      *
+// Copyright 2007-2020 Universidade do Porto - Faculdade de Engenharia      *
 // Laboratório de Sistemas e Tecnologia Subaquática (LSTS)                  *
 //***************************************************************************
 // This file is part of DUNE: Unified Navigation Environment.               *
@@ -29,113 +29,194 @@
 // Author: José Braga                                                       *
 //***************************************************************************
 
+// ISO C++ 98 headers.
+#include <cstdio>
+#include <cstdlib>
+#include <stdexcept>
+#include <string>
+
 // DUNE headers.
 #include <DUNE/Coordinates/WMM.hpp>
-#include <DUNE/Math/Angles.hpp>
-#include <DUNE/Time/BrokenDown.hpp>
+#include <DUNE/Coordinates/WMMBackend.hpp>
+#include <DUNE/FileSystem/Directory.hpp>
 
-// WMM 2025 headers.
-extern "C" {
-  #include <wmm2025/egm9615.h>
-  #include <wmm2025/GeomagnetismHeader.h>
-}
 namespace DUNE
 {
   namespace Coordinates
   {
+    //! EGM96 geoid height grid dimensions.
+    static const unsigned c_num_geoid_cols = 1441;
+    static const unsigned c_num_geoid_rows = 721;
+
     struct WMMData
     {
-      MAGtype_Geoid geoid;
-      MAGtype_Ellipsoid ellip;
-      MAGtype_MagneticModel* mm;
-      MAGtype_MagneticModel* timed_mm;
+      //! Geomagnetism library generation matching the loaded model.
+      WMMBackend* backend;
+      //! EGM96 geoid height grid, shared with the backend.
+      float* geoid_buffer;
     };
+
+    //! Read the model epoch from the first line of a coefficient file.
+    //! @param[in] file path to coefficient file.
+    //! @return model epoch in decimal years, negative on failure.
+    static double
+    readModelEpoch(const FileSystem::Path& file)
+    {
+      std::FILE* fd = std::fopen(file.c_str(), "r");
+      if (fd == NULL)
+        return -1.0;
+
+      double epoch = -1.0;
+      char line[128];
+      if (std::fgets(line, sizeof(line), fd) == NULL
+          || std::sscanf(line, "%lf", &epoch) != 1)
+        epoch = -1.0;
+
+      std::fclose(fd);
+      return epoch;
+    }
+
+    //! Select the coefficient file ('.cof') to load from a directory: the
+    //! named model when one is given, otherwise the model with the most
+    //! recent epoch available.
+    //! @param[in] dir directory holding coefficient files.
+    //! @param[in] model coefficient file name, empty for latest model.
+    //! @return path to the selected file, empty if none was found.
+    static FileSystem::Path
+    selectModel(const FileSystem::Path& dir, const std::string& model)
+    {
+      if (!model.empty())
+      {
+        std::string name = model;
+        if (name.size() < 4 || name.compare(name.size() - 4, 4, ".cof") != 0)
+          name += ".cof";
+        return dir / name;
+      }
+
+      FileSystem::Path best;
+      double best_epoch = -1.0;
+
+      FileSystem::Directory folder(dir);
+      const char* entry = NULL;
+      while ((entry = folder.readEntry(FileSystem::Directory::RD_FULL_NAME)) != NULL)
+      {
+        std::string name(entry);
+        if (name.size() < 4 || name.compare(name.size() - 4, 4, ".cof") != 0)
+          continue;
+
+        double epoch = readModelEpoch(entry);
+        if (epoch < 0)
+          continue;
+
+        if (epoch > best_epoch)
+        {
+          best = entry;
+          best_epoch = epoch;
+        }
+      }
+
+      return best;
+    }
+
+    //! Pick the vendored Geomagnetism library generation used to evaluate
+    //! a model of the given epoch: each library handles models from its
+    //! own generation onwards. To support a future model generation,
+    //! vendor its library under a new namespace (see
+    //! vendor/libraries/wmm2025), add a WMMBackend adapter for it (see
+    //! WMMBackend2025.cpp) and dispatch to it here (newest first).
+    //! @param[in] epoch model epoch in decimal years.
+    //! @return backend, to be deleted by the caller.
+    static WMMBackend*
+    createBackend(double epoch)
+    {
+      if (epoch >= 2025.0)
+        return createWmm2025Backend();
+
+      return createWmm2015Backend();
+    }
 
     WMM::WMM(void)
     {
-      init(FileSystem::Path::applicationFile().dirname() / "../etc");
+      init(FileSystem::Path::applicationFile().dirname() / "../etc", Time::BrokenDown(), "");
     }
 
     WMM::WMM(const FileSystem::Path& root)
     {
-      init(root);
+      init(root, Time::BrokenDown(), "");
+    }
+
+    WMM::WMM(const FileSystem::Path& root, const Time::BrokenDown& date)
+    {
+      init(root, date, "");
+    }
+
+    WMM::WMM(const FileSystem::Path& root, const Time::BrokenDown& date,
+             const std::string& model)
+    {
+      init(root, date, model);
     }
 
     void
-    WMM::init(const FileSystem::Path& root)
+    WMM::init(const FileSystem::Path& root, const Time::BrokenDown& date,
+              const std::string& model)
     {
       m_data = new WMMData;
-      FileSystem::Path wmmfile(root / "wmm/wmmhr.cof");
+      m_data->backend = NULL;
+      m_data->geoid_buffer = NULL;
 
+      FileSystem::Path egmfile(root / "wmm/egm9615.bin");
+
+      if (!egmfile.isFile())
+        throw std::runtime_error(egmfile.str() + " not found");
+
+      // Select the magnetic model to load.
+      FileSystem::Path wmmfile = selectModel(root / "wmm", model);
       if (!wmmfile.isFile())
-        throw std::runtime_error(wmmfile.str() + " not found");
+      {
+        if (!model.empty())
+          throw std::runtime_error("WMM coefficient file " + wmmfile.str() + " not found");
 
-      MAGtype_MagneticModel *magnetic_model[1] = {nullptr};
-
-      // Initialization
-      int result =
-        MAG_robustReadMagModels(const_cast<char*>(wmmfile.c_str()),
-                                reinterpret_cast<MAGtype_MagneticModel**>(&magnetic_model), 1);
-
-      if (result <= 0) {
-        // Handle error - no models were read
-        throw std::runtime_error("Failed to read WMM magnetic model file");
+        throw std::runtime_error("no WMM coefficient file (.cof) found in "
+                                 + (root / "wmm").str());
       }
 
-      m_data->mm = magnetic_model[0];
+      // Read EGM96 geoid height grid.
+      unsigned n = c_num_geoid_cols * c_num_geoid_rows;
+      m_data->geoid_buffer = (float*)std::malloc((n + 1) * sizeof(float));
+      std::FILE* file = std::fopen(egmfile.c_str(), "rb");
+      size_t rv = std::fread(m_data->geoid_buffer, sizeof(float), n, file);
+      std::fclose(file);
+      if (rv != n)
+        throw std::runtime_error("unable to extract geoid");
 
-      int num_terms = ((m_data->mm->nMax + 1) * (m_data->mm->nMax + 2) / 2);
-      m_data->timed_mm = MAG_AllocateModelMemory(num_terms);
-      MAG_SetDefaults(&m_data->ellip, &m_data->geoid);
-
-      // Read geoid data
-      m_data->geoid.GeoidHeightBuffer = GeoidHeightBuffer;
-      m_data->geoid.Geoid_Initialized = 1;
-
-      // Adjust magnetic model according to date
-      char dummy[100];
-      Time::BrokenDown now;
-      MAGtype_Date date;
-      date.Year = now.year;
-      date.Month = now.month;
-      date.Day = now.day;
-      MAG_DateToYear(&date, dummy);
-      MAG_TimelyModifyMagneticModel(date, m_data->mm, m_data->timed_mm);
+      // Load the model with the library generation matching its epoch.
+      m_data->backend = createBackend(readModelEpoch(wmmfile));
+      m_data->backend->load(wmmfile, date, m_data->geoid_buffer);
     }
 
     WMM::~WMM(void)
     {
-      MAG_FreeMagneticModelMemory(m_data->timed_mm);
-      MAG_FreeMagneticModelMemory(m_data->mm);
+      delete m_data->backend;
+      std::free(m_data->geoid_buffer);
       delete m_data;
+    }
+
+    std::string
+    WMM::model(void) const
+    {
+      return m_data->backend->model();
     }
 
     double
     WMM::height(double lat, double lon)
     {
-      double h = 0;
-      MAG_GetGeoidHeight(Math::Angles::degrees(lat), Math::Angles::degrees(lon), &h, &m_data->geoid);
-
-      return h;
+      return m_data->backend->height(lat, lon);
     }
 
     double
     WMM::declination(double lat, double lon, double h)
     {
-      MAGtype_CoordGeodetic geo;
-      MAGtype_CoordSpherical sph;
-      MAGtype_GeoMagneticElements gme;
-
-      geo.phi = Math::Angles::degrees(lat);
-      geo.lambda = Math::Angles::degrees(lon);
-      geo.UseGeoid = false;
-      geo.HeightAboveEllipsoid = h * 1e-03;
-
-      MAG_GeodeticToSpherical(m_data->ellip, geo, &sph);
-      MAG_Geomag(m_data->ellip, sph, geo, m_data->timed_mm, &gme);
-      MAG_CalculateGridVariation(geo, &gme);
-
-      return Math::Angles::radians(gme.Decl);
+      return m_data->backend->declination(lat, lon, h);
     }
   }
 }
