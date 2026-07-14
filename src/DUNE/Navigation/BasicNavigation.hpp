@@ -512,11 +512,18 @@ namespace DUNE
       checkUncertainty(bool abort = true);
 
       //! Routine to check current declination value using WMM.
-      //! @param[in] lat vehicle current latitude.
-      //! @param[in] lon vehicle current longitude.
-      //! @param[in] height vehicle current height.
+      //! @param[in] msg GPS fix that triggered the check.
       void
-      checkDeclination(double lat, double lon, double height);
+      checkDeclination(const IMC::GpsFix* msg);
+
+      //! Get the date at which the world magnetic model is evaluated.
+      //! Precedence: the 'Declination Date' parameter when set; the GPS
+      //! fix UTC date when valid (the log's date when replaying); the
+      //! current date.
+      //! @param[in] msg GPS fix, possibly carrying a valid UTC date.
+      //! @return date to evaluate the magnetic model at.
+      Time::BrokenDown
+      getDeclinationDate(const IMC::GpsFix* msg);
 
       //! Kalman Filter matrices.
       Navigation::KalmanFilter m_kal;
@@ -721,6 +728,10 @@ namespace DUNE
       //! Declination variables.
       bool m_declination_defined;
       bool m_use_declination;
+      //! Date at which the magnetic model is evaluated (YYYY-MM-DD, empty = current date).
+      std::string m_declination_date;
+      //! World magnetic model used for declination ([General] WMM Model, empty = latest).
+      std::string m_wmm_model;
       //! Sensors timeout.
       float m_without_gps_timeout;
       float m_without_dvl_timeout;

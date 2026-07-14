@@ -28,6 +28,9 @@
 // Author: Pedro Calado (Altitude filter)                                   *
 //***************************************************************************
 
+// ISO C++ 98 headers.
+#include <cstdio>
+
 // Local headers.
 #include <DUNE/Navigation/BasicNavigation.hpp>
 
@@ -240,6 +243,17 @@ namespace DUNE
       .minimumValue("1")
       .defaultValue("2")
       .description("Maximum deviation possible to issue error");
+
+      param("Declination Date", m_declination_date)
+      .defaultValue("")
+      .description("Date at which the world magnetic model is evaluated to "
+                   "compute the magnetic declination, in YYYY-MM-DD format. "
+                   "When empty, the UTC date of the GPS fix is used (the "
+                   "log's date when replaying), falling back to the current "
+                   "date");
+
+      // World magnetic model to use for declination (empty = latest).
+      m_ctx.config.get("General", "WMM Model", "", m_wmm_model);
 
       // Do not use the declination offset when simulating.
       m_use_declination = !m_ctx.profiles.isSelected("Simulation");
@@ -595,7 +609,7 @@ namespace DUNE
         m_gps_sog = msg->sog;
 
       // Check current declination value.
-      checkDeclination(msg->lat, msg->lon, msg->height);
+      checkDeclination(msg);
 
       m_last_lat = msg->lat;
       m_last_lon = msg->lon;
@@ -1290,16 +1304,53 @@ namespace DUNE
       }
     }
 
+    Time::BrokenDown
+    BasicNavigation::getDeclinationDate(const IMC::GpsFix* msg)
+    {
+      Time::BrokenDown date;
+
+      if (!m_declination_date.empty())
+      {
+        unsigned year = 0;
+        unsigned month = 0;
+        unsigned day = 0;
+        if (std::sscanf(m_declination_date.c_str(), "%u-%u-%u", &year, &month, &day) == 3
+            && year >= 1900 && month >= 1 && month <= 12 && day >= 1 && day <= 31)
+        {
+          date.year = year;
+          date.month = month;
+          date.day = day;
+          return date;
+        }
+
+        war(DTR("invalid 'Declination Date' value '%s': ignoring"),
+            m_declination_date.c_str());
+      }
+
+      if (msg->validity & IMC::GpsFix::GFV_VALID_DATE)
+      {
+        date.year = msg->utc_year;
+        date.month = msg->utc_month;
+        date.day = msg->utc_day;
+      }
+
+      return date;
+    }
+
     void
-    BasicNavigation::checkDeclination(double lat, double lon, double height)
+    BasicNavigation::checkDeclination(const IMC::GpsFix* msg)
     {
       if (!m_declination_defined && m_use_declination)
       {
         // Compute declination value
         // -- note: this is done only once, thus the short-lived wmm object
-        Coordinates::WMM wmm(m_ctx.dir_cfg);
-        m_declination = wmm.declination(lat, lon, height);
+        Time::BrokenDown date = getDeclinationDate(msg);
+        Coordinates::WMM wmm(m_ctx.dir_cfg, date, m_wmm_model);
+        m_declination = wmm.declination(msg->lat, msg->lon, msg->height);
         m_declination_defined = true;
+        debug("declination: %0.3f deg (%s @ %04u-%02u-%02u)",
+              Math::Angles::degrees(m_declination), wmm.model().c_str(),
+              date.year, date.month, date.day);
       }
     }
 
