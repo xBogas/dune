@@ -53,22 +53,41 @@ namespace Simulators
 {
   //! Interface with the Stonefish simulation engine.
   //!
-  //! Runs a Stonefish simulation, with or without graphical interface,
-  //! from a scenario file. The robot defined in the scenario replaces the
-  //! real vehicle: its simulated sensors are translated into the
-  //! corresponding IMC messages (see SensorBridge for the full mapping)
-  //! and thruster/servo commands are injected into the simulation.
+  //! Runs a Stonefish simulation, with or without graphical interface, from a
+  //! scenario file. Each robot defined in the scenario replaces a real vehicle
+  //! and is exposed to the IMC bus as a distinct system: the task translates
+  //! IMC source/destination ids to and from the simulation, so several
+  //! vehicles can be simulated at once.
   //!
-  //! The task dispatches:
+  //! Every robot is bound to the IMC system that shares its name (the local
+  //! vehicle to this node, or a remote one resolved by name / from the
+  //! EntityList it announces). Each device of a robot ("lauv-1/imu") is then
+  //! dispatched from that vehicle's system id and the entity id the vehicle
+  //! reports for it.
+  //!
+  //! When no robot is named after this system the task assumes it is running
+  //! on a dedicated simulation node, simulating only remote vehicles. If a
+  //! vehicle stack turns out to be co-located (this system reports a
+  //! VehicleState), this node expected to be simulated and a warning flags
+  //! the vehicle name mismatch between the configuration and the scenario
+  //! file; actuator commands that cannot be routed to a robot are likewise
+  //! reported once per source system.
+  //!
+  //! Per simulated vehicle the task dispatches:
   //! - SimulatedState with the ground truth state of the robot;
   //! - one IMC message stream per sensor of the scenario, each from an
-  //!   entity labelled with the sensor name (e.g. "lauv/imu");
+  //!   entity labelled with the sensor name (e.g. "lauv-1/imu");
   //! - Rpm and ServoPosition as actuator feedback.
   //!
   //! And consumes:
-  //! - SetThrusterActuation, indexing thrusters, propellers and pushers
-  //!   by order of declaration in the scenario;
-  //! - SetServoPosition, indexing servos and rudders likewise.
+  //! - SetThrusterActuation / SetServoPosition, routed to the robot whose
+  //!   system id matches the command source; thrusters, propellers and pushers
+  //!   (servos and rudders) are indexed by order of declaration in the
+  //!   scenario;
+  //! - EntityList, to learn the system and entity ids of each simulated
+  //!   vehicle;
+  //! - VehicleState, to detect a co-located vehicle stack absent from the
+  //!   scenario.
   //!
   //! @author João Bogas
   namespace StoneFish
