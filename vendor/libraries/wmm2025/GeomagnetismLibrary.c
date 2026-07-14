@@ -336,7 +336,7 @@ int MAG_robustReadMagneticModel_Large(char *filename, char *filenameSV, MAGtype_
 
 int MAG_robustReadMagModels(char *filename, MAGtype_MagneticModel **magneticmodels, int array_size)
 {
-    char* line = malloc(sizeof(char)*MAXLINELENGTH);
+    char* line = (char*) malloc(sizeof(char)*MAXLINELENGTH);
     int n, nMax = 0, num_terms, a;
     FILE *MODELFILE;
     MODELFILE = fopen(filename, "r");
@@ -1907,8 +1907,8 @@ CALLS : none
     double temp = DegreesOfArc;
     int tmp_size = 36;
     int tmp2_size = 32;
-    char *tempstring = malloc(sizeof(char)*tmp_size);
-    char *tempstring2 = malloc(sizeof(char)*tmp2_size);
+    char *tempstring = (char*) malloc(sizeof(char)*tmp_size);
+    char *tempstring2 = (char*) malloc(sizeof(char)*tmp2_size);
     int DMSstring_size = 100;
 
     memset(tempstring, '\0', tmp_size);
@@ -3630,9 +3630,9 @@ void MAG_PrintUserDataWithUncertainty(MAGtype_GeoMagneticElements GeomagElements
         MAGtype_Geoid *Geoid)
 {
     int dms_size = 150;
-    char *DeclString = malloc(sizeof(char)*dms_size);
-    char *InclString = malloc(sizeof(char)*dms_size);
-    char *GVString = malloc(sizeof(char)*dms_size); 
+    char *DeclString = (char*) malloc(sizeof(char)*dms_size);
+    char *InclString = (char*) malloc(sizeof(char)*dms_size);
+    char *GVString = (char*) malloc(sizeof(char)*dms_size); 
     memset(DeclString, '\0', dms_size);
     memset(InclString, '\0', dms_size);
     memset(GVString, '\0', dms_size);
