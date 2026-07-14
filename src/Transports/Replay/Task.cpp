@@ -283,6 +283,7 @@ namespace Transports
         IMC::LoggingControl* lc = static_cast<IMC::LoggingControl*>(m);
 
         m_ts_delta = lc->getTimeStamp();
+        double log_start_time = m_ts_delta;
 
         size_t spos = lc->name.find_last_of('/');
         if (spos != std::string::npos)
@@ -309,6 +310,14 @@ namespace Transports
         m_start_time = m->getTimeStamp();
         m_next_stats = m_start_time + c_stats_period;
         delete m;
+
+        // Advertise the replay start (original log time) once, 
+        // so clock-driven replay tasks  can anchor to it.
+        IMC::ClockControl cc;
+        cc.setSource(getSystemId());
+        cc.op = IMC::ClockControl::COP_SYNC_DONE;
+        cc.clock = log_start_time;
+        dispatch(cc);
 
         requestActivation();
 
