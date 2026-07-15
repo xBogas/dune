@@ -80,6 +80,8 @@ namespace Simulators
       uint16_t n_sat;
       //! Initial position (degrees)
       std::vector<double> position;
+      //! Initial heading (degrees)
+      double heading;
     };
 
     //! %GPS simulator task.
@@ -138,6 +140,13 @@ namespace Simulators
         .size(2)
         .description("Initial position of the vehicle");
 
+        param("Initial Heading", m_args.heading)
+          .units(Units::Degree)
+          .defaultValue("0.0")
+          .description("Initial heading of the vehicle, carried in the origin fix's "
+                       "course-over-ground and consumed by the simulation engine as "
+                       "the initial yaw");
+
         m_fix.clear();
         m_euler.clear();
         m_gv.clear();
@@ -156,6 +165,7 @@ namespace Simulators
       {
         m_origin.lat = Math::Angles::radians(m_args.position[0]);
         m_origin.lon = Math::Angles::radians(m_args.position[1]);
+        m_origin.cog = Math::Angles::normalizeRadian(Math::Angles::radians(m_args.heading));
         m_origin.type = IMC::GpsFix::GFT_MANUAL_INPUT;
         m_origin.validity = 0xffff;
       }
