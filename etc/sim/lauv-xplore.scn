@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<!--
+    Single LAUV scenario, robot named 'lauv-xplore-1'.
+
+    A single-robot instance (like lauv-1.scn) but named lauv-xplore-1 so it can
+    run alongside a DUNE built-in-simulator node named lauv-simulator-1 and land
+    both trajectories, under distinct IMC sources, in one log. Used by
+    etc/stonefish-xplore.ini and user/tools/dune-compare.sh.
+
+    All arguments are mandatory (Stonefish has no defaults). mass/cg_* set the
+    hull mass properties; edit them with etc/sim/lauv_trim.py rather than by
+    hand - pitch trim is millimetre-sensitive in cg_x. See etc/sim/README.md.
+-->
+<scenario>
+    <include file="basic.scn"/>
+    <include file="lauv.scn">
+        <arg name="name" value="lauv-xplore-1"/>
+        <arg name="mass" value="33.0"/>
+        <arg name="cg_x" value="0.0795"/>
+        <arg name="cg_y" value="0.0"/>
+        <arg name="cg_z" value="0.009"/>
+        <arg name="pos_n" value="0.0"/>
+        <arg name="pos_e" value="0.0"/>
+        <arg name="pos_yaw" value="0.0"/>
+    </include>
+</scenario>
