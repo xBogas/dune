@@ -48,7 +48,8 @@ namespace Maneuver
       Takeoff(Maneuvers::Maneuver* task):
         MuxedManeuver<IMC::Takeoff, void>(task),
         m_status(false),
-        m_height(0)
+        m_height(0),
+        m_alt(0)
       { }
 
       //! Start maneuver function
@@ -90,9 +91,7 @@ namespace Maneuver
       onEstimatedState(const IMC::EstimatedState* msg)
       {
         m_height = msg->height - msg->z;
-
-        if (m_ref_height == 0)
-          m_ref_height = m_height;
+        m_alt = msg->alt;
       }
 
       //! On message VehicleMedium
@@ -103,15 +102,15 @@ namespace Maneuver
         // Dispatch DesiredPath after launch
         if (msg->medium == IMC::VehicleMedium::VM_AIR && !m_status)
         {
-          float end_z;
+          float z;
           switch (m_path.end_z_units)
           {
             case IMC::Z_ALTITUDE:
-              end_z = m_path.end_z;
+              z = m_alt;
               break;
 
             case IMC::Z_HEIGHT:
-              end_z = m_ref_height + m_path.end_z;
+              z = m_height;
               break;
 
             default:
@@ -119,7 +118,7 @@ namespace Maneuver
               return;
           }
 
-          if (m_height >= end_z)
+          if (z >= m_path.end_z)
           {
             m_task->dispatch(m_path);
             m_task->debug("Takeoff: Launch Successful - DesiredPath sent.");
@@ -137,10 +136,10 @@ namespace Maneuver
       IMC::DesiredPath m_path;
       //! Status flag
       bool m_status;
-      //! Current vehicle height
+      //! Current height above the WGS-84 ellipsoid
       float m_height;
-      //! Reference height
-      float m_ref_height = 0;
+      //! Current altitude above ground
+      float m_alt;
     };
   }
 }
