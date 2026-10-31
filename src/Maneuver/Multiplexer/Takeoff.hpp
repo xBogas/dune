@@ -116,7 +116,7 @@ namespace Maneuver
 
             default:
               m_task->err("Invalid end_z_units");
-              break;
+              return;
           }
 
           if (m_height >= end_z)
