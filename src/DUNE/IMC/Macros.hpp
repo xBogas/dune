@@ -1,5 +1,5 @@
 //***************************************************************************
-// Copyright 2007-2024 Universidade do Porto - Faculdade de Engenharia      *
+// Copyright 2007-2026 Universidade do Porto - Faculdade de Engenharia      *
 // Laboratório de Sistemas e Tecnologia Subaquática (LSTS)                  *
 //***************************************************************************
 // This file is part of DUNE: Unified Navigation Environment.               *
@@ -28,7 +28,7 @@
 //***************************************************************************
 // Automatically generated.                                                 *
 //***************************************************************************
-// IMC XML MD5: 0f425402b735f36a64d579da7bb4baf3                            *
+// IMC XML MD5: 770042c876bc0258e511138cd9930fba                            *
 //***************************************************************************
 
 #ifndef DUNE_IMC_MACROS_HPP_INCLUDED_
@@ -62,6 +62,8 @@
 #define DUNE_IMC_VEHICLEOPERATIONALLIMITS 16
 //! MsgList identification number.
 #define DUNE_IMC_MSGLIST 20
+//! RamUsage identification number.
+#define DUNE_IMC_RAMUSAGE 21
 //! SimulatedState identification number.
 #define DUNE_IMC_SIMULATEDSTATE 50
 //! LeakSimulation identification number.
@@ -168,6 +170,8 @@
 #define DUNE_IMC_ACOUSTICREQUEST 215
 //! AcousticStatus identification number.
 #define DUNE_IMC_ACOUSTICSTATUS 216
+//! AcousticRelease identification number.
+#define DUNE_IMC_ACOUSTICRELEASE 217
 //! Rpm identification number.
 #define DUNE_IMC_RPM 250
 //! Voltage identification number.
@@ -328,6 +332,8 @@
 #define DUNE_IMC_GROUPSTREAMVELOCITY 362
 //! Airflow identification number.
 #define DUNE_IMC_AIRFLOW 363
+//! Power identification number.
+#define DUNE_IMC_POWER 364
 //! DesiredHeading identification number.
 #define DUNE_IMC_DESIREDHEADING 400
 //! DesiredZ identification number.
@@ -504,6 +510,8 @@
 #define DUNE_IMC_TCPREQUEST 521
 //! TCPStatus identification number.
 #define DUNE_IMC_TCPSTATUS 522
+//! AssetReport identification number.
+#define DUNE_IMC_ASSETREPORT 525
 //! Abort identification number.
 #define DUNE_IMC_ABORT 550
 //! PlanSpecification identification number.
@@ -566,6 +574,10 @@
 #define DUNE_IMC_COMPRESSEDIMAGE 702
 //! ImageTxSettings identification number.
 #define DUNE_IMC_IMAGETXSETTINGS 703
+//! Sampling identification number.
+#define DUNE_IMC_SAMPLING 722
+//! SamplingAction identification number.
+#define DUNE_IMC_SAMPLINGACTION 723
 //! RemoteState identification number.
 #define DUNE_IMC_REMOTESTATE 750
 //! Target identification number.
@@ -624,6 +636,8 @@
 #define DUNE_IMC_SOISTATE 853
 //! MessagePart identification number.
 #define DUNE_IMC_MESSAGEPART 877
+//! MessagePartControl identification number.
+#define DUNE_IMC_MESSAGEPARTCONTROL 878
 //! NeptusBlob identification number.
 #define DUNE_IMC_NEPTUSBLOB 888
 //! Aborted identification number.
@@ -668,7 +682,69 @@
 #define DUNE_IMC_DMSDETECTION 908
 //! HomePosition identification number.
 #define DUNE_IMC_HOMEPOSITION 909
+//! AbsoluteWind identification number.
+#define DUNE_IMC_ABSOLUTEWIND 911
+//! AisInfo identification number.
+#define DUNE_IMC_AISINFO 912
+//! ENCAwareness identification number.
+#define DUNE_IMC_ENCAWARENESS 913
+//! Displacement identification number.
+#define DUNE_IMC_DISPLACEMENT 915
+//! FollowCommand identification number.
+#define DUNE_IMC_FOLLOWCOMMAND 996
+//! Command identification number.
+#define DUNE_IMC_COMMAND 997
+//! FollowCommandState identification number.
+#define DUNE_IMC_FOLLOWCOMMANDSTATE 998
+//! CurrentProfile identification number.
+#define DUNE_IMC_CURRENTPROFILE 1014
+//! CurrentProfileCell identification number.
+#define DUNE_IMC_CURRENTPROFILECELL 1015
+//! ADCPBeam identification number.
+#define DUNE_IMC_ADCPBEAM 1016
+//! Frequency identification number.
+#define DUNE_IMC_FREQUENCY 1017
+//! WaveSpectrumParameters identification number.
+#define DUNE_IMC_WAVESPECTRUMPARAMETERS 1018
+//! WaterFlow identification number.
+#define DUNE_IMC_WATERFLOW 1019
+//! GpioState identification number.
+#define DUNE_IMC_GPIOSTATE 2000
+//! GpioStateGet identification number.
+#define DUNE_IMC_GPIOSTATEGET 2001
+//! GpioStateSet identification number.
+#define DUNE_IMC_GPIOSTATESET 2002
+//! ColoredDissolvedOrganicMatter identification number.
+#define DUNE_IMC_COLOREDDISSOLVEDORGANICMATTER 2003
+//! FluorescentDissolvedOrganicMatter identification number.
+#define DUNE_IMC_FLUORESCENTDISSOLVEDORGANICMATTER 2004
 //! TotalMagIntensity identification number.
 #define DUNE_IMC_TOTALMAGINTENSITY 2006
+//! CommRestriction identification number.
+#define DUNE_IMC_COMMRESTRICTION 2010
+//! QueryTypedEntityParameters identification number.
+#define DUNE_IMC_QUERYTYPEDENTITYPARAMETERS 2016
+//! TypedEntityParameter identification number.
+#define DUNE_IMC_TYPEDENTITYPARAMETER 2017
+//! ValuesIf identification number.
+#define DUNE_IMC_VALUESIF 2018
+//! VersionInfo identification number.
+#define DUNE_IMC_VERSIONINFO 2021
+//! TotalHeading identification number.
+#define DUNE_IMC_TOTALHEADING 2022
+//! BDI identification number.
+#define DUNE_IMC_BDI 2035
+//! TypedEntityParameterEditor identification number.
+#define DUNE_IMC_TYPEDENTITYPARAMETEREDITOR 2036
+//! AckMsg identification number.
+#define DUNE_IMC_ACKMSG 2040
+//! QueryBmsData identification number.
+#define DUNE_IMC_QUERYBMSDATA 2041
+//! BmsData identification number.
+#define DUNE_IMC_BMSDATA 2042
+//! BmsCellVoltage identification number.
+#define DUNE_IMC_BMSCELLVOLTAGE 2043
+//! BmsRegister identification number.
+#define DUNE_IMC_BMSREGISTER 2044
 
 #endif

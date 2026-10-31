@@ -1,5 +1,5 @@
 //***************************************************************************
-// Copyright 2007-2024 Universidade do Porto - Faculdade de Engenharia      *
+// Copyright 2007-2026 Universidade do Porto - Faculdade de Engenharia      *
 // Laboratório de Sistemas e Tecnologia Subaquática (LSTS)                  *
 //***************************************************************************
 // This file is part of DUNE: Unified Navigation Environment.               *
@@ -419,8 +419,6 @@ namespace Transports
 
         IMC::HistoricData* data = m_store.pollSamples(1000);
 
-        uint16_t newId = m_router.createInternalId();
-
         TransmissionRequest tr;
         tr.setSource(getSystemId());
         tr.setSourceEntity(getEntityId());
@@ -429,12 +427,11 @@ namespace Transports
         tr.comm_mean         = IMC::TransmissionRequest::CMEAN_ANY;
         tr.data_mode         = IMC::TransmissionRequest::DMODE_INLINEMSG;
         tr.destination       = m_args.any_gateway;
-        tr.req_id            = newId;
         tr.msg_data.set(data);
         tr.deadline          = Clock::getSinceEpoch() + m_args.any_forward_period;
 
         dispatch(tr);
-        m_transmission_requests[newId] = tr.clone();
+        m_transmission_requests[tr.req_id] = tr.clone();
 
         Memory::clear(data);
       }

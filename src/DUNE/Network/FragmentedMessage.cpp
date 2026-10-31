@@ -1,5 +1,5 @@
 //***************************************************************************
-// Copyright 2007-2024 Universidade do Porto - Faculdade de Engenharia      *
+// Copyright 2007-2026 Universidade do Porto - Faculdade de Engenharia      *
 // Laboratório de Sistemas e Tecnologia Subaquática (LSTS)                  *
 //***************************************************************************
 // This file is part of DUNE: Unified Navigation Environment.               *
@@ -27,6 +27,8 @@
 // Author: Jose Pinto                                                       *
 //***************************************************************************
 
+#include <unordered_set>
+
 // DUNE headers.
 #include <DUNE/Network/FragmentedMessage.hpp>
 
@@ -46,7 +48,7 @@ namespace DUNE
       m_parent = parent;
     }
 
-    IMC::Message*
+    std::vector<char>
     FragmentedMessage::setFragment(const IMC::MessagePart* part)
     {
       // is this the first fragment?
@@ -67,7 +69,7 @@ namespace DUNE
         else
           m_parent->err(DTR("Invalid fragment received and it won't be processed."));
 
-        return NULL;
+        return std::vector<char>();
       }
 
       m_fragments[part->frag_number] = *part;
@@ -86,11 +88,11 @@ namespace DUNE
                       m_fragments[i].data.end());
         }
 
-        return IMC::Packet::deserialize((uint8_t*)&data[0], total_length);
+        return data;
       }
       else
       {
-        return 0;
+        return std::vector<char>();
       }
     }
 
@@ -103,10 +105,62 @@ namespace DUNE
       return Time::Clock::get() - m_creation_time;
     }
 
+    void
+    FragmentedMessage::resetAge(void)
+    {
+      m_creation_time = Time::Clock::get();
+    }
+
     int
     FragmentedMessage::getFragmentsMissing(void)
     {
       return m_num_frags - m_fragments.size();
+    }
+
+    int
+    FragmentedMessage::getFragmentsReceived(void)
+    {
+      return m_fragments.size();
+    }
+
+    void
+    FragmentedMessage::getFragmentsMissing(std::string& frag_ids)
+    {
+      frag_ids.clear();
+      auto missing = getFragmentsMissing();
+      if (missing <= 0)
+        return;
+
+      std::vector<int> temp(m_num_frags); 
+      std::iota(temp.begin(), temp.end(), 0);
+      std::unordered_set<int> result(temp.begin(), temp.end());
+      for (int i = 0; i < m_num_frags; i++)
+      {
+        if (m_fragments.find(i) != m_fragments.end())
+          result.erase(i);
+      }
+
+      frag_ids = Utils::String::join(result.begin(), result.end(), ",");
+    }
+
+    void
+    FragmentedMessage::getFragmentsReceived(std::string& frag_ids)
+    {
+      frag_ids.clear();
+      auto received = getFragmentsReceived();
+      if (received <= 0)
+        return;
+        
+      std::vector<int> temp(m_num_frags); 
+      std::iota(temp.begin(), temp.end(), 0);
+      std::unordered_set<int> result(temp.begin(), temp.end());
+      for (int i = 0; i < m_num_frags; i++)
+      {
+        if (m_fragments.find(i) == m_fragments.end())
+          result.erase(i);
+      }
+
+      frag_ids = Utils::String::join(result.begin(), result.end(), ",");
     }
 
     FragmentedMessage::~FragmentedMessage(void)

@@ -1,5 +1,5 @@
 //***************************************************************************
-// Copyright 2007-2024 Universidade do Porto - Faculdade de Engenharia      *
+// Copyright 2007-2026 Universidade do Porto - Faculdade de Engenharia      *
 // Laboratório de Sistemas e Tecnologia Subaquática (LSTS)                  *
 //***************************************************************************
 // This file is part of DUNE: Unified Navigation Environment.               *
@@ -56,6 +56,20 @@ namespace DUNE
         return 0;
 
       return creator(label, ctx);
+    }
+
+    std::vector<DUNE::Tasks::Task*>
+    Factory::produce(Context& ctx)
+    {
+      std::vector<DUNE::Tasks::Task*> tasks;
+      task_creator_t creator;
+      for (auto& entry : c_table)
+      {
+        creator = entry.second.getCreatorPointer();
+        tasks.push_back(creator(entry.first, ctx));
+      }
+
+      return tasks;
     }
 
     bool

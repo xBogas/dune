@@ -1,5 +1,5 @@
 //***************************************************************************
-// Copyright 2007-2024 Universidade do Porto - Faculdade de Engenharia      *
+// Copyright 2007-2026 Universidade do Porto - Faculdade de Engenharia      *
 // Laboratório de Sistemas e Tecnologia Subaquática (LSTS)                  *
 //***************************************************************************
 // This file is part of DUNE: Unified Navigation Environment.               *
@@ -28,18 +28,18 @@
 //***************************************************************************
 // Automatically generated.                                                 *
 //***************************************************************************
-// IMC XML MD5: 0f425402b735f36a64d579da7bb4baf3                            *
+// IMC XML MD5: 770042c876bc0258e511138cd9930fba                            *
 //***************************************************************************
 
 #ifndef DUNE_IMC_CONSTANTS_HPP_INCLUDED_
 #define DUNE_IMC_CONSTANTS_HPP_INCLUDED_
 
 //! IMC version string.
-#define DUNE_IMC_CONST_VERSION "5.4.30"
+#define DUNE_IMC_CONST_VERSION "5.4.31"
 //! Git repository information.
-#define DUNE_IMC_CONST_GIT_INFO "2022-03-14 ada9492  (HEAD -> master, origin/master, origin/HEAD)"
+#define DUNE_IMC_CONST_GIT_INFO "2026-10-15 7d67c4a  (HEAD -> master, origin/master, origin/HEAD)"
 //! MD5 sum of XML specification file.
-#define DUNE_IMC_CONST_MD5 "0f425402b735f36a64d579da7bb4baf3"
+#define DUNE_IMC_CONST_MD5 "770042c876bc0258e511138cd9930fba"
 //! Synchronization number.
 #define DUNE_IMC_CONST_SYNC 0xFE54
 //! Reversed synchronization number.

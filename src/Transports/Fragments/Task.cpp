@@ -1,5 +1,5 @@
 //***************************************************************************
-// Copyright 2007-2024 Universidade do Porto - Faculdade de Engenharia      *
+// Copyright 2007-2026 Universidade do Porto - Faculdade de Engenharia      *
 // Laboratório de Sistemas e Tecnologia Subaquática (LSTS)                  *
 //***************************************************************************
 // This file is part of DUNE: Unified Navigation Environment.               *
@@ -31,33 +31,54 @@
 #include <DUNE/DUNE.hpp>
 #include <DUNE/Network/FragmentedMessage.hpp>
 
+// Dccl headers.
+#include <dccl/CodecDCCL.hpp>
+
 namespace Transports
 {
   namespace Fragments
   {
     using DUNE_NAMESPACES;
 
+    //! Garbage collector timeout in seconds.
+    static const uint16_t c_gc_timeout = 120;
+
     struct Arguments
     {
-      // Reception timeout.
+      //! Reception timeout.
       float max_age_secs;
+      //! Transmission request time to live.
+      float ttl;
     };
 
     struct Task: public DUNE::Tasks::Task
     {
-      std::map<uint32_t, FragmentedMessage> m_incoming;
-      Time::Counter<float> m_gc_counter;
+      //! Task arguments.
       Arguments m_args;
+      //! Map of incoming fragmented messages.
+      //! Key is a hash of the message uid and source.
+      //! Value is a pair of the fragmented message and a boolean
+      //! indicating if the message is still being received.
+      std::map<uint32_t, std::pair<FragmentedMessage, bool>> m_incoming;
+      //! Garbage collector counter.
+      Time::Counter<float> m_gc_counter;
+      // DCCL
+      IMCDCCL::CodecDCCL m_codec_dccl;
 
       Task(const std::string& name, Tasks::Context& ctx):
-        DUNE::Tasks::Task(name, ctx)
+        DUNE::Tasks::Task(name, ctx),
+        m_gc_counter(c_gc_timeout),
+        m_codec_dccl(this)
       {
         param("Reception timeout", m_args.max_age_secs)
         .defaultValue("1800")
         .description("Maximum amount of seconds to wait for missing fragments in incoming messages");
 
+        param("Transmission Request TTL", m_args.ttl)
+        .defaultValue("120")
+        .description("Time to live for transmission requests");
+
         bind<IMC::MessagePart>(this);
-        m_gc_counter.setTop(120);
         setEntityState(IMC::EntityState::ESTA_NORMAL, Status::CODE_ACTIVE);
       }
 
@@ -70,47 +91,146 @@ namespace Transports
       void
       consume(const IMC::MessagePart* msg)
       {
-        int hash = (msg->uid << 16) | msg->getSource();
+        const auto source = msg->getSource();
+        if (source == getSystemId())
+          return;
+
+        int hash = (msg->uid << 16) | source;
 
         if (m_incoming.find(hash) == m_incoming.end())
         {
           FragmentedMessage incMsg;
           incMsg.setParentTask(this);
-          m_incoming[hash] = incMsg;
+          m_incoming[hash].first = incMsg;
         }
 
-        debug("Incoming message fragment (%d still missing)",
-              m_incoming[hash].getFragmentsMissing());
+        std::vector<char> data = m_incoming[hash].first.setFragment(msg);
+        m_incoming[hash].second = true;
+        debug("Incoming message fragment for message %u (system: 0x%x) (%d still missing)",
+              msg->uid,
+              source,
+              m_incoming[hash].first.getFragmentsMissing());
 
-        IMC::Message * res = m_incoming[hash].setFragment(msg);
-        if (res != NULL)
+        if (data.empty())
+          return;
+
+        // Check if it is an IMC message
+        IMC::Message* res = nullptr;
+        try
         {
-          dispatch(res);
+          res = IMC::Packet::deserialize((uint8_t*)&data[0], data.size());
+        
+          if (res != NULL)
+          {
+            debug("created message %s", res->getName());
+            res->setSource(msg->getSource());
+            res->setDestination(msg->getDestination());
+            dispatch(res);
+            m_incoming.erase(hash);
+            return;
+          }
+        }
+        catch(const std::exception& e)
+        {
+          debug("Failed to deserialize message with uid %u (system: 0x%x) as IMC message: %s",
+                msg->uid,
+                source,
+                e.what());
+        }
+
+        if (!m_codec_dccl.isAvailable())
+          return;
+
+        std::string encoded_bytes(data.begin(), data.end());
+
+        //Debug DCCL Msg received
+        war("[DCCL DECODING] Trying to decode a dccl msg with size %zu ", encoded_bytes.size());
+
+        std::unique_ptr<DUNE::IMC::Message> decoded_msg = m_codec_dccl.decodeDCCL(encoded_bytes);
+        if (decoded_msg != nullptr)
+        {
+          //debug("Created DCCL message %s", decoded_msg->getName());
+          //Debug IMC Msg decompressed
+          std::ostringstream ss;
+          decoded_msg->toJSON(ss);
+          war("[DCCL DECODING] Decoded msg %s", decoded_msg->getName());
+          war("[DCCL DECODING] JSON: %s", ss.str().c_str());
+
+          dispatch(decoded_msg.get());
           m_incoming.erase(hash);
         }
       }
 
-      void
+      bool
       messageRipper(void)
       {
         debug("ripping old messages");
 
-        std::map<uint32_t, FragmentedMessage>::iterator it = m_incoming.begin();
+        std::map<uint32_t, std::pair<FragmentedMessage, bool>>::iterator it = m_incoming.begin();
         std::vector<uint32_t> remove;
         for ( ; it != m_incoming.end(); ++it)
         {
-          if (it->second.getAge() > m_args.max_age_secs)
+          const auto remaining = m_args.max_age_secs - it->second.first.getAge();
+          if (remaining <= 0.0f)
           {
+            if (it->second.second)
+            {              
+              IMC::MessagePartControl mpc;
+              const uint16_t destination = static_cast<uint16_t>(it->first & 0xFFFF);
+              mpc.setDestination(destination);
+              mpc.uid = static_cast<uint8_t>((it->first >> 16) & 0xFF);
+              mpc.op = IMC::MessagePartControl::OP_REQUEST_RETRANSMIT;
+              if (it->second.first.getFragmentsMissing() <= it->second.first.getFragmentsReceived())
+              {
+                it->second.first.getFragmentsMissing(mpc.frag_ids);
+              }
+              else
+              {
+                it->second.first.getFragmentsReceived(mpc.frag_ids);
+                mpc.frag_ids.insert(0, "!");
+              }
+              it->second.first.resetAge();
+              it->second.second = false;
+              inf(DTR("Incoming message with uid %u (system: 0x%x) is still incomplete (%d fragments missing). "
+                      "Requesting retransmission."), mpc.uid, destination, it->second.first.getFragmentsMissing());
+              //! FIXME: This should be sent via the same mean as the original message, but we don't have that information here.
+              dispatchRequest(mpc);
+              continue;
+            }
+
             remove.push_back(it->first);
 
             // message has died of natural causes...
-            war(DTR("Removed incoming message from memory (%d fragments were still missing)."),
-                it->second.getFragmentsMissing());
+            const auto uid = static_cast<uint8_t>((it->first >> 16) & 0xFF);
+            const auto dest = static_cast<uint16_t>(it->first & 0xFFFF);
+            war(DTR("Removed incoming message with uid %u (system: 0x%x) from memory (%d fragments still missing)."),
+                uid,
+                dest,
+                it->second.first.getFragmentsMissing());
+          }
+          else if (remaining < m_gc_counter.getRemaining())
+          {
+            m_gc_counter.setTop(remaining);
+            return false;
           }
         }
 
         for (size_t i = 0; i < remove.size(); ++i)
           m_incoming.erase(remove[i]);
+
+        return true;
+      }
+
+      void
+      dispatchRequest(const IMC::Message& msg)
+      {
+        IMC::TransmissionRequest tr;
+        tr.setDestination(getSystemId());
+        tr.comm_mean = IMC::TransmissionRequest::CMEAN_SATELLITE;
+        tr.data_mode = IMC::TransmissionRequest::DMODE_INLINEMSG;
+        tr.deadline = Clock::getSinceEpoch() + m_args.ttl;
+        tr.msg_data.set(msg.clone());
+        dispatch(tr);
       }
 
       void
@@ -122,8 +242,8 @@ namespace Transports
 
           if (m_gc_counter.overflow())
           {
-            messageRipper();
-            m_gc_counter.reset();
+            if (messageRipper())
+              m_gc_counter.setTop(c_gc_timeout);
           }
         }
       }

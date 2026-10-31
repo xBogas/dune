@@ -1,5 +1,5 @@
 //***************************************************************************
-// Copyright 2007-2024 Universidade do Porto - Faculdade de Engenharia      *
+// Copyright 2007-2026 Universidade do Porto - Faculdade de Engenharia      *
 // Laboratório de Sistemas e Tecnologia Subaquática (LSTS)                  *
 //***************************************************************************
 // This file is part of DUNE: Unified Navigation Environment.               *
@@ -50,9 +50,9 @@ namespace DUNE
       { }
 
       void
-      consume(const IMC::Message* msg)
+      consume(const IMC::Message* msg) override
       {
-        ((m_obj).*(m_fun))(reinterpret_cast<const M*>(msg));
+        ((m_obj).*(m_fun))(static_cast<const M*>(msg));
       }
 
       ~Consumer(void)

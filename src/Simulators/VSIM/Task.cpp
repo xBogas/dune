@@ -1,5 +1,5 @@
 //***************************************************************************
-// Copyright 2007-2024 Universidade do Porto - Faculdade de Engenharia      *
+// Copyright 2007-2026 Universidade do Porto - Faculdade de Engenharia      *
 // Laboratório de Sistemas e Tecnologia Subaquática (LSTS)                  *
 //***************************************************************************
 // This file is part of DUNE: Unified Navigation Environment.               *
@@ -61,6 +61,8 @@ namespace Simulators
     //! %Task arguments.
     struct Arguments
     {
+      //! Initial heading of the vehicle.
+      double initial_heading;
       //! Entity label of the stream velocity source.
       std::string svlabel;
       //! Simulation time multiplier
@@ -80,19 +82,26 @@ namespace Simulators
       Arguments m_args;
       //! Stream velocity.
       double m_svel[3];
+      //! Entity id of the stream velocity source.
+      unsigned m_sv_eid;
 
       Task(const std::string& name, Tasks::Context& ctx):
         Periodic(name, ctx),
         m_vehicle(NULL),
-        m_world(NULL)
+        m_world(NULL),
+        m_sv_eid(AddressResolver::invalid())
       {
+        param("Initial Heading", m_args.initial_heading)
+            .units(Units::Degree)
+            .defaultValue("0.0")
+            .description("Initial heading of the vehicle.");
+
         param("Time Multiplier", m_args.time_multiplier)
         .defaultValue("1.0")
         .description("Simulation time multiplier");
 
         param("Entity Label - Stream Velocity Source", m_args.svlabel)
-            .defaultValue("Stream Velocity Simulator")
-            .description("Entity label of the stream velocity source.");
+        .description("Entity label of the stream velocity source.");
 
         // Register handler routines.
         bind<IMC::GpsFix>(this);
@@ -117,6 +126,22 @@ namespace Simulators
       {
         Memory::clear(m_vehicle);
         Memory::clear(m_world);
+      }
+
+      void
+      onEntityResolution(void)
+      {
+        if (m_args.svlabel.empty())
+          return;
+
+        try
+        {
+          m_sv_eid = resolveEntity(m_args.svlabel);
+        }
+        catch(const std::exception& e)
+        {
+          war("unable to resolve Stream Velocity Source entity: %s", e.what());
+        }
       }
 
       //! Initialize resources and add vehicle to the world.
@@ -150,7 +175,8 @@ namespace Simulators
 
         // We assume vehicle starts at sea surface.
         m_vehicle->setPosition(0, 0, 0);
-        m_vehicle->setOrientation(0, 0, msg->cog);
+        // m_vehicle->setOrientation(0, 0, msg->cog);
+        m_vehicle->setOrientation(0, 0, Angles::radians(m_args.initial_heading));
 
         // Define vehicle origin.
         m_sstate.lat = msg->lat;
@@ -169,10 +195,9 @@ namespace Simulators
       void
       consume(const IMC::ServoPosition* msg)
       {
-        UUV* v = static_cast<UUV*>(m_vehicle);
-        v->updateFin(msg->id, msg->value);
+        m_vehicle->updateFin(msg->id, msg->value);
       }
-
+      
       void
       consume(const IMC::SetThrusterActuation* msg)
       {
@@ -184,7 +209,7 @@ namespace Simulators
       {
         // Filter valid messages.
         if (msg->getSource() != getSystemId() ||
-            resolveEntity(msg->getSourceEntity()) != m_args.svlabel)
+            msg->getSourceEntity() != m_sv_eid)
           return;
 
         m_svel[0] = msg->x;

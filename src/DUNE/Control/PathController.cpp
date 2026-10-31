@@ -1,5 +1,5 @@
 //***************************************************************************
-// Copyright 2007-2024 Universidade do Porto - Faculdade de Engenharia      *
+// Copyright 2007-2026 Universidade do Porto - Faculdade de Engenharia      *
 // Laboratório de Sistemas e Tecnologia Subaquática (LSTS)                  *
 //***************************************************************************
 // This file is part of DUNE: Unified Navigation Environment.               *
@@ -67,6 +67,7 @@ namespace DUNE
       m_setup(true),
       m_braking(false),
       m_jump_monitors(false),
+      m_dpath_speed(0),
       m_aloops(0),
       m_btrack(NULL),
       m_scope_ref(0)
@@ -212,6 +213,13 @@ namespace DUNE
       m_ctx.config.get("General", "Absolute Minimum Altitude", "1.2", m_btd.args.min_alt);
 
       m_ctx.config.get("General", "Time Of Arrival Factor", "5.0", m_time_factor);
+      
+      param("Radius To Endpoint", m_end_radius)
+      .defaultValue("5")
+      .minimumValue("-1")
+      .defaultValue("-1")
+      .description("Radius around endpoint to consider maneuver as done. "
+                   "If negative, only ETA is considered.");
 
       bind<IMC::Brake>(this);
       bind<IMC::ControlLoops>(this);
@@ -220,6 +228,12 @@ namespace DUNE
       bind<IMC::Distance>(this);
       bind<IMC::DesiredZ>(this);
       bind<IMC::DesiredSpeed>(this);
+
+      // Initialize TrackingState
+      m_ts.loitering = false;
+      m_ts.nearby = false;
+      m_ts.end_time = Clock::get();
+      m_ts.z_control = false;
     }
 
     PathController::~PathController(void)
@@ -237,10 +251,6 @@ namespace DUNE
         m_speriod = 1.0 / m_speriod;
 
       m_ts.cc = m_course_ctl ? 1 : 0;
-      m_ts.loitering = false;
-      m_ts.nearby = false;
-      m_ts.end_time = Clock::get();
-      m_ts.z_control = false;
 
       if (m_ctm.enabled && m_ctm.nav_unc_factor > 0)
         bind<IMC::NavigationUncertainty>(this);
@@ -275,6 +285,8 @@ namespace DUNE
           Memory::clear(m_btrack);
         }
       }
+
+      m_ts.waypoints.resizeAndFill(1, 2, 0);
     }
 
     void
@@ -360,6 +372,11 @@ namespace DUNE
 
       setControlLoops(dpath);
       handleLoiter(dpath);
+
+      // Send speed reference
+      m_dpath_speed = dpath->speed;
+      m_dpath_speed_units = dpath->speed_units;
+      setSpeedReference(m_dpath_speed, m_dpath_speed_units);
 
       updateTrackingState();
       reportPathControlState(true);
@@ -450,6 +467,9 @@ namespace DUNE
       m_ts.start.z = m_pcs.start_z;
       m_ts.start.z_units = m_pcs.start_z_units;
 
+      m_ts.lat_st = m_pcs.start_lat;
+      m_ts.lon_st = m_pcs.start_lon;
+
       if ((dpath->flags & IMC::DesiredPath::FL_LOITER_CURR) != 0 &&
           dpath->lradius > 0)
       {
@@ -473,6 +493,12 @@ namespace DUNE
                           &m_ts.end.x, &m_ts.end.y);
       m_ts.end.z = m_pcs.end_z;
       m_ts.end.z_units = m_pcs.end_z_units;
+
+      m_ts.lat_en = m_pcs.end_lat;
+      m_ts.lon_en = m_pcs.end_lon;
+
+      m_ts.waypoints(0, 0) = m_pcs.end_lat;
+      m_ts.waypoints(0, 1) = m_pcs.end_lon;
     }
 
     void
@@ -508,14 +534,6 @@ namespace DUNE
         m_ts.z_control = false;
         m_pcs.flags |= IMC::PathControlState::FL_NO_Z;
       }
-
-      // Send speed reference
-      m_speed.value = dpath->speed;
-      m_speed.speed_units = dpath->speed_units;
-
-      enableControlLoops(IMC::CL_SPEED);
-
-      dispatch(m_speed, Tasks::DF_LOOP_BACK);
     }
 
     void
@@ -677,9 +695,25 @@ namespace DUNE
         WGS84::displacement(lat, lon, 0,
                             m_pcs.start_lat, m_pcs.start_lon, 0,
                             &m_ts.start.x, &m_ts.start.y);
-        WGS84::displacement(lat, lon, 0,
-                            m_pcs.end_lat, m_pcs.end_lon, 0,
-                            &m_ts.end.x, &m_ts.end.y);
+        
+        // Loiter approach
+        if (!m_ts.loitering && m_ts.loiter.radius > 0)
+        {
+          double prev_lat_end = prev_estate.lat;
+          double prev_lon_end = prev_estate.lon;
+          WGS84::displace(m_ts.end.x, m_ts.end.y,
+                          &prev_lat_end, &prev_lon_end);
+          WGS84::displacement(lat, lon, 0,
+                              prev_lat_end, prev_lon_end, 0,
+                              &m_ts.end.x, &m_ts.end.y);
+
+        }
+        else
+        {
+          WGS84::displacement(lat, lon, 0,
+                              m_pcs.end_lat, m_pcs.end_lon, 0,
+                              &m_ts.end.x, &m_ts.end.y);
+        }
       }
 
       const double now = Clock::get();
@@ -781,11 +815,23 @@ namespace DUNE
 
         const bool was_nearby = m_ts.nearby;
 
-        if (!m_ts.nearby && m_ts.eta <= 0)
+        if (m_end_radius < 0.0f)
         {
-          m_ts.eta = 0;
-          m_ts.nearby = true;
-          m_ts.end_time = m_ts.now;
+          if (!m_ts.nearby && m_ts.eta <= 0)
+          {
+            m_ts.eta = 0;
+            m_ts.nearby = true;
+            m_ts.end_time = m_ts.now;
+          }
+        }
+        else
+        {
+          if (!m_ts.nearby && m_ts.range <= m_end_radius)
+          {
+            m_ts.eta = 0;
+            m_ts.nearby = true;
+            m_ts.end_time = m_ts.now;
+          }
         }
 
         if (!was_nearby && m_ts.nearby)
@@ -1109,15 +1155,23 @@ namespace DUNE
     double
     PathController::getZ(IMC::ZUnits unit)
     {
-      if (unit == IMC::Z_HEIGHT)
-        return m_estate.height;
-      else if (unit == IMC::Z_ALTITUDE)
-        return m_estate.alt;
-      else if (unit == IMC::Z_DEPTH)
-        return m_estate.depth;
-        
-      throw std::runtime_error(DTR("Invalid Z unit"));
-      return 0;
+      switch (unit)
+      {
+        case IMC::Z_HEIGHT:
+          return m_estate.height;
+
+        case IMC::Z_ALTITUDE:
+          return m_estate.alt;
+
+        case IMC::Z_DEPTH:
+          return m_estate.depth;
+
+        case IMC::Z_NONE:
+          return m_estate.z;
+
+        default:
+          throw std::runtime_error(DTR("Invalid Z unit"));
+      }
     }
 
     void

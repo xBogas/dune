@@ -1,5 +1,5 @@
 //***************************************************************************
-// Copyright 2007-2024 Universidade do Porto - Faculdade de Engenharia      *
+// Copyright 2007-2026 Universidade do Porto - Faculdade de Engenharia      *
 // Laboratório de Sistemas e Tecnologia Subaquática (LSTS)                  *
 //***************************************************************************
 // This file is part of DUNE: Unified Navigation Environment.               *
@@ -216,13 +216,14 @@ main(int argc, char** argv)
   Tasks::Context context;
   I18N::setLanguage(context.dir_i18n);
   Scheduler::set(Scheduler::POLICY_RR);
+  std::string versions = String::str("%s - private: %s", getFullVersion(), getFullVersionPrivate());
 
   OptionParser options;
   options.executable("dune")
   .program(DUNE_SHORT_NAME)
   .copyright(DUNE_COPYRIGHT)
   .email(DUNE_CONTACT)
-  .version(getFullVersion())
+  .version(versions.c_str())
   .date(getCompileDate())
   .arch(DUNE_SYSTEM_NAME)
   .add("-d", "--config-dir",
@@ -238,7 +239,11 @@ main(int argc, char** argv)
   .add("-V", "--vehicle",
        "Vehicle name override", "VEHICLE")
   .add("-X", "--dump-params-xml",
-       "Dump parameters XML to folder DIR", "DIR");
+       "Dump parameters XML to folder DIR", "DIR")
+  .add("-y", "--dump-task-params",
+       "Dump TASK parameters", "TASK")
+  .add("-Y", "--dump-all-task-params",
+       "Dump all tasks parameters");
 
   // Parse command line arguments.
   if (!options.parse(argc, argv))
@@ -274,6 +279,49 @@ main(int argc, char** argv)
   DUNE::Tasks::Factory::registerDynamicTasks(context.dir_lib.c_str());
   registerStaticTasks();
 
+  if (!options.value("--dump-all-task-params").empty())
+  {
+    DUNE_MSG("Daemon", "Dumping parameters of all tasks");
+    Path path("all_tasks_params.xml");
+    std::ofstream ofs(path.c_str());
+    ofs << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+       << "<config"
+       << " format=\"1\""
+       << " version=\"" << getFullVersion() << "\""
+       << " modules=\"" << getFullVersionPrivate() << "\">\n";
+    std::vector<Tasks::Task*> tasks = Tasks::Factory::produce(context);
+    for (Tasks::Task* task : tasks)
+    {
+      task->writeParamsXML(ofs);
+      delete task;
+    }
+    ofs << "</config>\n";
+    return 0;
+  }
+  else if (options.value("--dump-task-params") != "")
+  {
+    std::string task_name = String::trim(options.value("--dump-task-params"));
+    Tasks::Task* task = Tasks::Factory::produce(task_name, task_name, context);
+    if (task == 0)
+    {
+      DUNE_ERR("Daemon", "Task '" + task_name + "' not found, cannot dump parameters");
+      return 1;
+    }
+
+    DUNE_MSG("Daemon", "Dumping '" + task_name + "' parameters");
+    Path path("task_" + task_name + "_params.xml");
+    std::ofstream ofs(path.c_str());
+    ofs << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+      << "<config"
+      << " format=\"1\""
+      << " version=\"" << getFullVersion() << "\""
+      << " modules=\"" << getFullVersionPrivate() << "\">\n";
+    task->writeParamsXML(ofs);
+    ofs << "</config>\n";
+    delete task;
+    return 0;
+  }
+
   // Retrieve configuration file and try parsing it.
   if (options.value("--config-file") == "")
   {
@@ -300,9 +348,20 @@ main(int argc, char** argv)
     }
     catch (std::runtime_error& e2)
     {
-      std::cerr << String::str("ERROR: %s\n", e.what()) << std::endl;
-      std::cerr << String::str("ERROR: %s\n", e2.what()) << std::endl;
-      return 1;
+      try
+      {
+        cfg_file = context.dir_pri_cfg / options.value("--config-file") + ".ini";
+        context.config.parseFile(cfg_file.c_str());
+        context.original_cfg.parseFile(cfg_file.c_str());
+        context.dir_cfg = context.dir_pri_cfg;
+      }
+      catch (std::runtime_error& e3)
+      {
+        std::cerr << String::str("ERROR: %s\n", e.what()) << std::endl;
+        std::cerr << String::str("ERROR: %s\n", e2.what()) << std::endl;
+        std::cerr << String::str("ERROR: %s\n", e3.what()) << std::endl;
+        return 1;
+      }
     }
   }
 

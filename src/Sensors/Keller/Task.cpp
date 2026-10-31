@@ -1,5 +1,5 @@
 //***************************************************************************
-// Copyright 2007-2024 Universidade do Porto - Faculdade de Engenharia      *
+// Copyright 2007-2026 Universidade do Porto - Faculdade de Engenharia      *
 // Laboratório de Sistemas e Tecnologia Subaquática (LSTS)                  *
 //***************************************************************************
 // This file is part of DUNE: Unified Navigation Environment.               *
@@ -78,8 +78,6 @@ namespace Sensors
     {
       //! IO device (URI).
       std::string io_dev;
-      //! Read frequency.
-      double read_frequency;
       // True if UART has local echo enabled.
       bool uart_echo;
       // Depth conversion factor.
@@ -161,20 +159,12 @@ namespace Sensors
         m_faults_count(0),
         m_timeout_count(0)
       {
-        // Define configuration parameters.
-        paramActive(Tasks::Parameter::SCOPE_GLOBAL,
-                    Tasks::Parameter::VISIBILITY_DEVELOPER, 
-                    true);
-                    
+        paramConfigurableSampling();
+        
         param("IO Port - Device", m_args.io_dev)
         .defaultValue("")
         .description("IO device URI in the form \"tcp://ADDRESS:PORT\" "
                      "or \"uart://DEVICE:BAUD\"");
-        
-        param(DTR_RT("Execution Frequency"), m_args.read_frequency)
-        .units(Units::Hertz)
-        .defaultValue("1.0")
-        .description(DTR("Frequency at which task reads data"));
 
         param("Serial Port - Local Echo", m_args.uart_echo)
         .defaultValue("false")
@@ -214,8 +204,7 @@ namespace Sensors
       void
       onUpdateParameters(void)
       {
-        if (paramChanged(m_args.read_frequency))
-          setReadFrequency(m_args.read_frequency);
+        BasicDeviceDriver::onUpdateParameters();
 
         // Depth conversion (bar to meters of fluid).
         if (paramChanged(m_args.depth_conv))
@@ -562,8 +551,10 @@ namespace Sensors
       }
 
       void
-      reportEntityState(void)
+      setEntityStateSampling(bool state) override
       {
+        (void)state;
+
         if (m_wdog.overflow())
         {
           std::string text = String::str(DTR("%0.1f seconds without valid data"),
@@ -606,9 +597,17 @@ namespace Sensors
           {
             m_sample_count++;
             m_pressure.value = m_channel_readout * c_pascal_per_bar;
-            dispatch(m_pressure);
+            if(!isNaN(m_pressure.value))
+              dispatch(m_pressure);
+            else
+              war(DTR("received NaN pressure value, ignoring"));
+
             m_depth.value = m_channel_readout * m_args.depth_conv;
-            dispatch(m_depth);
+            if(!isNaN(m_depth.value))
+              dispatch(m_depth);
+            else
+              war(DTR("received NaN depth value, ignoring"));
+
             reading = true;
           }
         }
@@ -619,12 +618,15 @@ namespace Sensors
           if (read())
           {
             m_temperature.value = m_channel_readout;
-            dispatch(m_temperature);
+            if(!isNaN(m_temperature.value))
+              dispatch(m_temperature);
+            else
+              war(DTR("received NaN temperature value, ignoring"));
+
             reading = true;
           }
         }
 
-        reportEntityState();
         return reading;
       }
     };

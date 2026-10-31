@@ -1,5 +1,5 @@
 ############################################################################
-# Copyright 2007-2024 Universidade do Porto - Faculdade de Engenharia      #
+# Copyright 2007-2026 Universidade do Porto - Faculdade de Engenharia      #
 # Laboratório de Sistemas e Tecnologia Subaquática (LSTS)                  #
 ############################################################################
 # This file is part of DUNE: Unified Navigation Environment.               #
@@ -28,16 +28,37 @@
 ############################################################################
 
 # Validate CMake version.
-cmake_minimum_required(VERSION 3.1 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.12 FATAL_ERROR)
 
 if(COMMAND CMAKE_POLICY)
-  cmake_policy(SET CMP0003 NEW)
+  cmake_policy(SET CMP0075 NEW)
+  if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.28")
+    cmake_policy(SET CMP0153 OLD)
+    cmake_policy(SET CMP0145 OLD)
+    cmake_policy(SET CMP0144 NEW)
+  endif()
 endif(COMMAND CMAKE_POLICY)
 
-# Required C++ Standard.
-set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_C_STANDARD 99)
+
+#############################################################################
+# DUNE Legacy build
+#############################################################################
+if(NOT DEFINED DUNELEGACY)
+  set(DUNELEGACY FALSE)
+endif()
+message(STATUS "DUNELEGACY: ${DUNELEGACY}")
+if(DUNELEGACY)
+  message(STATUS "USING CMAKE_CXX_STANDARD 14")
+  set(CMAKE_CXX_STANDARD 14)
+  add_definitions(-DDUNE_LEGACY)
+else(DUNELEGACY)
+  message(STATUS "USING CMAKE_CXX_STANDARD 17")
+  # Required C++ Standard.
+  set(CMAKE_CXX_STANDARD 17)
+  set(CMAKE_CXX_STANDARD_REQUIRED ON)
+  set(CMAKE_CXX_EXTENSIONS OFF)
+endif(DUNELEGACY)
 
 include(cmake/Toolchain.cmake)
 
@@ -48,10 +69,10 @@ project("DUNE")
 set(PROJECT_NAME "DUNE: Unified Navigation Environment")
 set(PROJECT_SHORT_NAME "DUNE")
 set(PROJECT_VENDOR "Universidade do Porto - LSTS")
-set(PROJECT_COPYRIGHT "Copyright (C) 2007-2024 - ${PROJECT_VENDOR}")
+set(PROJECT_COPYRIGHT "Copyright (C) 2007-2026 - ${PROJECT_VENDOR}")
 set(PROJECT_CONTACT "DUNE <dune@lsts.pt>")
-set(PROJECT_VERSION_YEAR  "2022")
-set(PROJECT_VERSION_MONTH "04")
+set(PROJECT_VERSION_YEAR  "2026")
+set(PROJECT_VERSION_MONTH "01")
 set(PROJECT_VERSION_PATCH "0")
 set(PROJECT_VERSION_RCN   "0")
 
@@ -98,7 +119,8 @@ dune_option(EXIV2 "Enable support for Exiv2")
 dune_option(NO_RTTI "Disable support for RTTI")
 dune_option(UEYE "Enable support for IDS uEye cameras")
 dune_option(H5CPP "Enable support for hdf5 format i/o using the h5cpp library")
-dune_option(ELLIPSOIDAL "Enable ellipsoidal coordinates in (WGS84) displace")
+dune_option(DUNELEGACY "Disable compilation of C++17 features")
+dune_option(DCCL "Enable support for DCCL library")
 
 # Internationalization.
 include(${PROJECT_SOURCE_DIR}/cmake/I18N.cmake)
@@ -168,8 +190,8 @@ file(GLOB_RECURSE DUNE_CORE_HEADERS "${PROJECT_SOURCE_DIR}/src/DUNE/*.hpp"
 file(GLOB_RECURSE DUNE_CORE_DEFS    "${PROJECT_SOURCE_DIR}/src/DUNE/*.def")
 string(REPLACE ";" " " DUNE_CORE_HEADERS_STRING "${DUNE_CORE_HEADERS}")
 
-file(GLOB_RECURSE PRIVATE_CORE_SOURCES "${PROJECT_SOURCE_DIR}/private*/src/DUNE/Control/*.cpp")
-file(GLOB_RECURSE PRIVATE_CORE_HEADERS "${PROJECT_SOURCE_DIR}/private*/src/DUNE/Control/*.hpp")
+file(GLOB_RECURSE PRIVATE_CORE_SOURCES "${PROJECT_SOURCE_DIR}/private*/src/DUNE/*.cpp")
+file(GLOB_RECURSE PRIVATE_CORE_HEADERS "${PROJECT_SOURCE_DIR}/private*/src/DUNE/*.hpp")
 string(REPLACE ";" " " PRIVATE_CORE_HEADERS_STRING "${PRIVATE_CORE_HEADERS}")
 
 file(GLOB_RECURSE USER_CORE_SOURCES "${PROJECT_SOURCE_DIR}/user*/src/USER/*.cpp")
@@ -183,6 +205,20 @@ install(FILES ${DUNE_GENERATED}/src/DUNE/Config.hpp
   DESTINATION include/DUNE)
 
 include(${PROJECT_SOURCE_DIR}/cmake/Version.cmake)
+
+message(STATUS "")
+message(STATUS "******************************************")
+message(STATUS "***            Compiler Flags          ***")
+message(STATUS "******************************************")
+
+if(NOT DUNE_OS_WINDOWS)
+  message(STATUS "Adding: -Wno-cpp")
+  set(DUNE_CXX_FLAGS "${DUNE_CXX_FLAGS} -Wno-cpp")
+  set(DUNE_C_FLAGS "${DUNE_C_FLAGS} -Wno-cpp")
+endif(NOT DUNE_OS_WINDOWS)
+
+message(STATUS "DUNE_CXX_FLAGS: ${DUNE_CXX_FLAGS}")
+message(STATUS "DUNE_C_FLAGS: ${DUNE_C_FLAGS}")
 
 set_source_files_properties(${DUNE_CORE_SOURCES} ${USER_CORE_SOURCES} ${PRIVATE_CORE_SOURCES}
   PROPERTIES COMPILE_FLAGS "${DUNE_CXX_FLAGS} ${DUNE_CXX_FLAGS_STRICT}")
@@ -246,11 +282,6 @@ else(DUNE_SHARED)
 endif(DUNE_SHARED)
 
 add_dependencies(dune-core dune-version)
-
-# WGS84 Coordinate Type
-if(ELLIPSOIDAL)
-  add_definitions(-DDUNE_ELLIPSOIDAL_DISPLACE)
-endif(ELLIPSOIDAL)
 
 ##########################################################################
 #                          Tasks                                         #
@@ -438,7 +469,6 @@ if(TESTS)
     dune_test(${test})
   endforeach(test ${DUNE_TESTS_SOURCES})
 endif(TESTS)
-
 ##########################################################################
 #                                CDash                                   #
 ##########################################################################

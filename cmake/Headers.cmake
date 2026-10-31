@@ -1,5 +1,5 @@
 ############################################################################
-# Copyright 2007-2024 Universidade do Porto - Faculdade de Engenharia      #
+# Copyright 2007-2026 Universidade do Porto - Faculdade de Engenharia      #
 # Laboratório de Sistemas e Tecnologia Subaquática (LSTS)                  #
 ############################################################################
 # This file is part of DUNE: Unified Navigation Environment.               #
@@ -108,6 +108,7 @@ macro(dune_probe_headers)
   dune_test_header(inttypes.h)
   dune_test_header(linux/i2c-dev.h)
   dune_test_header(linux/i2c.h)
+  dune_test_header(linux/gpio.h)
   dune_test_header(linux/rtc.h)
   dune_test_header(linux/input.h)
   dune_test_header(linux/spi/spidev.h)
