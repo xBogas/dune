@@ -69,6 +69,7 @@ namespace DUNE
       m_jump_monitors(false),
       m_dpath_speed(0),
       m_aloops(0),
+      m_land_path(false),
       m_btrack(NULL),
       m_scope_ref(0)
     {
@@ -348,6 +349,7 @@ namespace DUNE
       const double now = Clock::get();
       const bool no_start = setStartPoint(now, dpath);
       setEndPoint(dpath);
+      m_land_path = (dpath->flags & IMC::DesiredPath::FL_LAND) != 0;
 
       Coordinates::getBearingAndRange(m_ts.start, m_ts.end,
                                       &m_ts.track_bearing, &m_ts.track_length);
@@ -724,7 +726,8 @@ namespace DUNE
       m_ts.delta = now - m_ts.now;
       m_ts.now = now;
 
-      if (m_ts.nearby && m_ts.now - m_ts.end_time >= m_new_ref_timeout)
+      // A landing is the last reference; the autopilot finishes it.
+      if (m_ts.nearby && !m_land_path && m_ts.now - m_ts.end_time >= m_new_ref_timeout)
       {
         signalError(DTR("expected new path control reference"));
         return;

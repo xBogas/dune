@@ -519,6 +519,8 @@ namespace DUNE
       float m_eta_min_speed;
       //! Active loops
       uint32_t m_aloops;
+      //! Current path is a landing, handed over to the autopilot
+      bool m_land_path;
       //! Timeout for new incoming path reference
       double m_new_ref_timeout;
       //! Time of arrival factor
