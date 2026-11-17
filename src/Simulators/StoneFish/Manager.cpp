@@ -33,7 +33,7 @@ namespace Simulators
       // overwriting an earlier install.
       if (!m_pretick_installed && m_onPreTick)
       {
-        getDynamicsWorld()->setInternalTickCallback(PreTickCallback, this, true);
+        GetDynamicsWorld()->setInternalTickCallback(PreTickCallback, this, true);
         m_pretick_installed = true;
       }
 
@@ -70,7 +70,7 @@ namespace Simulators
         return;
       }
 
-      std::vector<sf::ConsoleMessage> logs = parser.getLog();
+      std::vector<sf::ConsoleMessage> logs = parser.GetLog();
       for (sf::ConsoleMessage& log : logs)
       {
         switch (log.type)

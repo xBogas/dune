@@ -36,6 +36,7 @@
 #include <Stonefish/core/SimulationManager.h>
 
 #include <functional>
+#include <memory>
 
 namespace Simulators
 {
@@ -62,9 +63,9 @@ namespace Simulators
     class ConsoleSim: public sf::ConsoleSimulationApp, public SimulatorInterface
     {
     public:
-      ConsoleSim(const std::string& title, const std::string& dir, sf::SimulationManager* sim,
-                 quitPredicate quit):
-        sf::ConsoleSimulationApp(title, dir, sim),
+      ConsoleSim(const std::string& title, const std::string& dir,
+                 std::unique_ptr<sf::SimulationManager> sim, quitPredicate quit):
+        sf::ConsoleSimulationApp(title, dir, std::move(sim)),
         m_quit(quit)
       { }
 
@@ -107,8 +108,9 @@ namespace Simulators
     {
     public:
       GraphicalSim(const std::string& title, const std::string& dir, sf::RenderSettings r,
-                   sf::HelperSettings h, sf::SimulationManager* sim, quitPredicate quit):
-        sf::GraphicalSimulationApp(title, dir, r, h, sim),
+                   sf::HelperSettings h, std::unique_ptr<sf::SimulationManager> sim,
+                   quitPredicate quit):
+        sf::GraphicalSimulationApp(title, dir, r, h, std::move(sim)),
         m_quit(quit)
       { }
 

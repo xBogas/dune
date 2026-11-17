@@ -48,31 +48,24 @@ namespace Simulators
     public:
       Engine(SimMode mode, const DUNE::FileSystem::Path& scn_fd, double freq,
              const sf::RenderSettings& render, const sf::HelperSettings& helper, simCallback onStep,
-             simCallback onBuild, simCallback onPreTick, quitPredicate quit):
-        m_manager(nullptr),
-        m_sim(nullptr)
+             simCallback onBuild, simCallback onPreTick, quitPredicate quit)
       {
-        m_manager = new SimManager(freq, onStep, onBuild, onPreTick, scn_fd.str());
+        // The simulation app owns the manager.
+        auto manager = std::make_unique<SimManager>(freq, onStep, onBuild, onPreTick, scn_fd.str());
 
         std::string data_dir = scn_fd.dirname().str() + "/";
 
         switch (mode)
         {
           case SimMode::CONSOLE:
-            m_sim = new ConsoleSim("DUNE sim", data_dir, m_manager, quit);
+            m_sim = std::make_unique<ConsoleSim>("DUNE sim", data_dir, std::move(manager), quit);
             break;
 
           case SimMode::GRAPHICAL:
-            m_sim = new GraphicalSim("DUNE sim", data_dir, render, helper, m_manager, quit);
+            m_sim = std::make_unique<GraphicalSim>("DUNE sim", data_dir, render, helper,
+                                                   std::move(manager), quit);
             break;
         }
-      }
-
-      ~Engine(void)
-      {
-        // The simulation app does not own the manager: release both.
-        delete m_sim;
-        delete m_manager;
       }
 
       /// @brief Start the simulation
@@ -88,8 +81,7 @@ namespace Simulators
       }
 
     private:
-      SimManager* m_manager;
-      SimulatorInterface* m_sim;
+      std::unique_ptr<SimulatorInterface> m_sim;
     };
   }
 }

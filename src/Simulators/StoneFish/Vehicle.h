@@ -38,7 +38,9 @@
 
 // Stonefish headers.
 #include <Stonefish/actuators/Actuator.h>
+// Robot.h needs SolidEntity complete (unique_ptr default argument).
 #include <Stonefish/core/Robot.h>
+#include <Stonefish/entities/SolidEntity.h>
 
 namespace Simulators
 {
@@ -142,7 +144,7 @@ namespace Simulators
       std::string
       getName(void) const
       {
-        return m_robot->getName();
+        return m_robot->GetName();
       }
 
       //! Current dynamic state of the robot.
@@ -218,14 +220,14 @@ namespace Simulators
       std::string
       getThrusterName(size_t index) const
       {
-        return m_thrusters[index]->getName();
+        return m_thrusters[index]->GetName();
       }
 
       //! Name of a servo bank actuator.
       std::string
       getServoName(size_t index) const
       {
-        return m_servos[index]->getName();
+        return m_servos[index]->GetName();
       }
 
       //! Rotational speed of a thrust bank actuator.

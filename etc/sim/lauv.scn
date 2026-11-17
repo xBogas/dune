@@ -266,12 +266,8 @@
         <sensor name="DVL" type="dvl" rate="5.0">
             <link name="hull"/>
             <origin xyz="0.0 0.0 0.15" rpy="3.1416 0.0 0.0"/>
+            <specs beam_angle="30.0"/>
             <range velocity="9.0 9.0 9.0" altitude_min="0.2" altitude_max="80.0"/>
-        </sensor>
-
-        <sensor name="gyro" type="gyro" rate="50.0">
-            <link name="hull"/>
-            <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
         </sensor>
 
         <sensor name="compass" type="compass" rate="10.0">

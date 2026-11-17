@@ -66,21 +66,21 @@ namespace Simulators
     void
     SensorBridge::bind(sf::SimulationManager& sim)
     {
-      sf::Ocean* ocean = sim.getOcean();
+      sf::Ocean* ocean = sim.GetOcean();
       if (ocean != nullptr)
-        m_water_density = ocean->getLiquid().density;
+        m_water_density = ocean->GetLiquid().density;
 
       // A rebuilt simulation replaces the sensors of the previous one.
       m_scalars.clear();
 
       sf::Sensor* sensor;
-      for (unsigned i = 0; (sensor = sim.getSensor(i)) != nullptr; i++)
+      for (unsigned i = 0; (sensor = sim.GetSensor(i)) != nullptr; i++)
       {
-        switch (sensor->getType())
+        switch (sensor->GetType())
         {
           case sf::SensorType::JOINT:
           case sf::SensorType::LINK:
-            DUNE_MSG("SensorBridge", "scalar sensor: " << sensor->getName());
+            DUNE_MSG("SensorBridge", "scalar sensor: " << sensor->GetName());
             m_scalars.push_back(static_cast<sf::ScalarSensor*>(sensor));
             break;
 
@@ -89,7 +89,7 @@ namespace Simulators
             break;
 
           default:
-            warnOnce(sensor->getName(), "sensor has no IMC counterpart implemented!");
+            warnOnce(sensor->GetName(), "sensor has no IMC counterpart implemented!");
             break;
         }
       }
@@ -100,7 +100,7 @@ namespace Simulators
     {
       for (sf::ScalarSensor* sensor : m_scalars)
       {
-        if (!sensor->isNewDataAvailable())
+        if (!sensor->IsNewDataAvailable())
           continue;
 
         translate(sensor);
@@ -137,10 +137,10 @@ namespace Simulators
     void
     SensorBridge::translate(sf::ScalarSensor* sensor)
     {
-      const std::string dev_name = sensor->getName();
-      const sf::Sample sample = sensor->getLastSample();
+      const std::string dev_name = sensor->GetName();
+      const sf::Sample sample = sensor->GetLastSample();
 
-      switch (sensor->getScalarSensorType())
+      switch (sensor->GetScalarSensorType())
       {
         case sf::ScalarSensorType::ACC:
           translateAccelerometer(dev_name, sample);
@@ -189,9 +189,9 @@ namespace Simulators
     SensorBridge::translateAccelerometer(const std::string& dev_name, const sf::Sample& sample)
     {
       IMC::Acceleration msg;
-      msg.x = sample.getValue(0);
-      msg.y = sample.getValue(1);
-      msg.z = sample.getValue(2);
+      msg.x = sample.GetValue(0);
+      msg.y = sample.GetValue(1);
+      msg.z = sample.GetValue(2);
       dispatch(msg, dev_name);
     }
 
@@ -199,9 +199,9 @@ namespace Simulators
     SensorBridge::translateGyroscope(const std::string& dev_name, const sf::Sample& sample)
     {
       IMC::AngularVelocity msg;
-      msg.x = sample.getValue(0);
-      msg.y = sample.getValue(1);
-      msg.z = sample.getValue(2);
+      msg.x = sample.GetValue(0);
+      msg.y = sample.GetValue(1);
+      msg.z = sample.GetValue(2);
       dispatch(msg, dev_name);
     }
 
@@ -209,22 +209,22 @@ namespace Simulators
     SensorBridge::translateImu(const std::string& dev_name, const sf::Sample& sample)
     {
       IMC::EulerAngles euler;
-      euler.phi = sample.getValue(0);
-      euler.theta = sample.getValue(1);
-      euler.psi = sample.getValue(2);
+      euler.phi = sample.GetValue(0);
+      euler.theta = sample.GetValue(1);
+      euler.psi = sample.GetValue(2);
       euler.psi_magnetic = euler.psi;
       dispatch(euler, dev_name);
 
       IMC::AngularVelocity rates;
-      rates.x = sample.getValue(3);
-      rates.y = sample.getValue(4);
-      rates.z = sample.getValue(5);
+      rates.x = sample.GetValue(3);
+      rates.y = sample.GetValue(4);
+      rates.z = sample.GetValue(5);
       dispatch(rates, dev_name);
 
       IMC::Acceleration accel;
-      accel.x = sample.getValue(6);
-      accel.y = sample.getValue(7);
-      accel.z = sample.getValue(8);
+      accel.x = sample.GetValue(6);
+      accel.y = sample.GetValue(7);
+      accel.z = sample.GetValue(8);
       dispatch(accel, dev_name);
     }
 
@@ -232,7 +232,7 @@ namespace Simulators
     SensorBridge::translateCompass(const std::string& dev_name, const sf::Sample& sample)
     {
       IMC::EulerAngles msg;
-      msg.psi_magnetic = sample.getValue(0);
+      msg.psi_magnetic = sample.GetValue(0);
       dispatch(msg, dev_name);
     }
 
@@ -242,15 +242,15 @@ namespace Simulators
       // Channels: bottom velocity (0-2), altitude (3), water velocity (4-6)
       // and ping status (7): 0 - bottom, 1 - water, 2 - both, 3 - none.
       // Older Stonefish versions only provide the first four channels.
-      const std::vector<sf::Scalar> data = sample.getData();
+      const std::vector<sf::Scalar> data = sample.GetData();
       const int status = data.size() > 7 ? (int)data[7] : 0;
       const bool bottom_lock = (status == 0 || status == 2);
       const bool water_lock = (status == 1 || status == 2);
 
       IMC::GroundVelocity ground;
-      ground.x = sample.getValue(0);
-      ground.y = sample.getValue(1);
-      ground.z = sample.getValue(2);
+      ground.x = sample.GetValue(0);
+      ground.y = sample.GetValue(1);
+      ground.z = sample.GetValue(2);
       ground.validity = bottom_lock
                           ? (IMC::GroundVelocity::VAL_VEL_X | IMC::GroundVelocity::VAL_VEL_Y
                              | IMC::GroundVelocity::VAL_VEL_Z)
@@ -270,7 +270,7 @@ namespace Simulators
       }
 
       IMC::Distance altitude;
-      altitude.value = sample.getValue(3);
+      altitude.value = sample.GetValue(3);
       altitude.validity = bottom_lock ? IMC::Distance::DV_VALID : IMC::Distance::DV_INVALID;
       dispatch(altitude, dev_name);
     }
@@ -280,8 +280,8 @@ namespace Simulators
     {
       // Stonefish reports latitude and longitude in degrees and flags the
       // absence of a fix (sensor underwater) with out of range values.
-      const double lat = sample.getValue(0);
-      const double lon = sample.getValue(1);
+      const double lat = sample.GetValue(0);
+      const double lon = sample.GetValue(1);
       const bool has_fix = std::fabs(lat) <= 90.0 && std::fabs(lon) <= 180.0;
 
       IMC::GpsFix msg;
@@ -310,7 +310,7 @@ namespace Simulators
     void
     SensorBridge::translatePressure(const std::string& dev_name, const sf::Sample& sample)
     {
-      const double pascal = sample.getValue(0);
+      const double pascal = sample.GetValue(0);
 
       // IMC pressure is expressed in hectopascal.
       IMC::Pressure pressure;
@@ -329,22 +329,22 @@ namespace Simulators
       // longitude (5), body velocity (6-8), attitude (9-11), angular
       // rates (12-14) and body acceleration (15-17).
       IMC::EstimatedState msg;
-      msg.lat = Angles::radians(sample.getValue(4));
-      msg.lon = Angles::radians(sample.getValue(5));
-      msg.x = sample.getValue(0);
-      msg.y = sample.getValue(1);
-      msg.z = sample.getValue(2);
-      msg.depth = sample.getValue(2);
-      msg.alt = sample.getValue(3);
-      msg.u = sample.getValue(6);
-      msg.v = sample.getValue(7);
-      msg.w = sample.getValue(8);
-      msg.phi = sample.getValue(9);
-      msg.theta = sample.getValue(10);
-      msg.psi = sample.getValue(11);
-      msg.p = sample.getValue(12);
-      msg.q = sample.getValue(13);
-      msg.r = sample.getValue(14);
+      msg.lat = Angles::radians(sample.GetValue(4));
+      msg.lon = Angles::radians(sample.GetValue(5));
+      msg.x = sample.GetValue(0);
+      msg.y = sample.GetValue(1);
+      msg.z = sample.GetValue(2);
+      msg.depth = sample.GetValue(2);
+      msg.alt = sample.GetValue(3);
+      msg.u = sample.GetValue(6);
+      msg.v = sample.GetValue(7);
+      msg.w = sample.GetValue(8);
+      msg.phi = sample.GetValue(9);
+      msg.theta = sample.GetValue(10);
+      msg.psi = sample.GetValue(11);
+      msg.p = sample.GetValue(12);
+      msg.q = sample.GetValue(13);
+      msg.r = sample.GetValue(14);
       Coordinates::BodyFixedFrame::toInertialFrame(msg.phi, msg.theta, msg.psi, msg.u, msg.v, msg.w,
                                                    &msg.vx, &msg.vy, &msg.vz);
       dispatch(msg, dev_name);
@@ -355,7 +355,7 @@ namespace Simulators
     {
       // Channels: angle (0) and angular velocity (1).
       IMC::Rpm msg;
-      msg.value = (int16_t)std::lround(sample.getValue(1) * 60.0 / Math::c_two_pi);
+      msg.value = (int16_t)std::lround(sample.GetValue(1) * 60.0 / Math::c_two_pi);
       dispatch(msg, dev_name);
     }
 
@@ -363,15 +363,15 @@ namespace Simulators
     SensorBridge::translateCurrent(const std::string& dev_name, const sf::Sample& sample)
     {
       IMC::Current msg;
-      msg.value = sample.getValue(0);
+      msg.value = sample.GetValue(0);
       dispatch(msg, dev_name);
     }
 
     void
     SensorBridge::translateMultibeam(sf::ScalarSensor* sensor, const sf::Sample& sample)
     {
-      const sf::SensorChannel desc = sensor->getSensorChannelDescription(0);
-      const std::vector<sf::Scalar> ranges = sample.getData();
+      const sf::SensorChannel desc = sensor->GetSensorChannelDescription(0);
+      const std::vector<sf::Scalar> ranges = sample.GetData();
 
       IMC::SonarData msg;
       msg.type = IMC::SonarData::ST_MULTIBEAM;
@@ -390,7 +390,7 @@ namespace Simulators
         msg.data.push_back((char)(mm >> 8));
       }
 
-      dispatch(msg, sensor->getName());
+      dispatch(msg, sensor->GetName());
     }
 
     void
@@ -399,7 +399,7 @@ namespace Simulators
       // Channels: beam angle (0) and measured distance (1). The angle has
       // no place in an IMC Distance message and is dropped.
       IMC::Distance msg;
-      msg.value = sample.getValue(1);
+      msg.value = sample.GetValue(1);
       msg.validity = IMC::Distance::DV_VALID;
       dispatch(msg, dev_name);
     }
@@ -407,9 +407,9 @@ namespace Simulators
     void
     SensorBridge::setupVision(sf::VisionSensor* sensor)
     {
-      DUNE_MSG("SensorBridge", "vision sensor: " << sensor->getName());
+      DUNE_MSG("SensorBridge", "vision sensor: " << sensor->GetName());
 
-      switch (sensor->getVisionSensorType())
+      switch (sensor->GetVisionSensorType())
       {
         case sf::VisionSensorType::COLOR_CAMERA:
           static_cast<sf::ColorCamera*>(sensor)->InstallNewDataHandler(
@@ -432,7 +432,7 @@ namespace Simulators
           break;
 
         default:
-          warnOnce(sensor->getName(), "vision sensor has no IMC counterpart implemented!");
+          warnOnce(sensor->GetName(), "vision sensor has no IMC counterpart implemented!");
           break;
       }
     }
@@ -441,41 +441,41 @@ namespace Simulators
     SensorBridge::onColorCamera(sf::ColorCamera* camera)
     {
       unsigned int width, height;
-      camera->getResolution(width, height);
+      camera->GetResolution(width, height);
 
       m_jpeg.setInputDimensions(width, height).setInputColorSpace(Media::JPEGCompressor::CS_RGB);
-      if (!m_jpeg.compress((uint8_t*)camera->getImageDataPointer(), 90))
+      if (!m_jpeg.compress((uint8_t*)camera->GetImageDataPointer(), 90))
       {
-        warnOnce(camera->getName(), "failed to compress camera frame");
+        warnOnce(camera->GetName(), "failed to compress camera frame");
         return;
       }
 
       IMC::CompressedImage msg;
       msg.frameid = m_frameid++;
       msg.data.assign(m_jpeg.imageData(), m_jpeg.imageData() + m_jpeg.imageSize());
-      dispatch(msg, camera->getName());
+      dispatch(msg, camera->GetName());
     }
 
     void
     SensorBridge::onFls(sf::FLS* fls)
     {
       unsigned int beams, bins;
-      fls->getResolution(beams, bins);
+      fls->GetResolution(beams, bins);
 
       IMC::SonarData msg;
       msg.type = IMC::SonarData::ST_MULTIBEAM;
       msg.frequency = 0;
       msg.min_range = 0;
-      msg.max_range = (uint16_t)fls->getRangeMax();
-      fillSonarData(msg, (uint8_t*)fls->getImageDataPointer(), beams * bins);
-      dispatch(msg, fls->getName());
+      msg.max_range = (uint16_t)fls->GetRangeMax();
+      fillSonarData(msg, (uint8_t*)fls->GetImageDataPointer(), beams * bins);
+      dispatch(msg, fls->GetName());
     }
 
     void
     SensorBridge::onSss(sf::SSS* sss)
     {
       unsigned int width, lines;
-      sss->getResolution(width, lines);
+      sss->GetResolution(width, lines);
 
       // The buffer is a waterfall image with the newest ping in the first
       // row, covering both channels: port and starboard.
@@ -483,25 +483,25 @@ namespace Simulators
       msg.type = IMC::SonarData::ST_SIDESCAN;
       msg.frequency = 0;
       msg.min_range = 0;
-      msg.max_range = (uint16_t)sss->getRangeMax();
-      fillSonarData(msg, (uint8_t*)sss->getImageDataPointer(), width);
-      dispatch(msg, sss->getName());
+      msg.max_range = (uint16_t)sss->GetRangeMax();
+      fillSonarData(msg, (uint8_t*)sss->GetImageDataPointer(), width);
+      dispatch(msg, sss->GetName());
     }
 
     void
     SensorBridge::onMsis(sf::MSIS* msis)
     {
       unsigned int bins, steps;
-      msis->getResolution(bins, steps);
+      msis->GetResolution(bins, steps);
 
       // Full mechanical scan: one row of bins per beam angle step.
       IMC::SonarData msg;
       msg.type = IMC::SonarData::ST_PENCILBEAM;
       msg.frequency = 0;
       msg.min_range = 0;
-      msg.max_range = (uint16_t)msis->getRangeMax();
-      fillSonarData(msg, (uint8_t*)msis->getImageDataPointer(), bins * steps);
-      dispatch(msg, msis->getName());
+      msg.max_range = (uint16_t)msis->GetRangeMax();
+      fillSonarData(msg, (uint8_t*)msis->GetImageDataPointer(), bins * steps);
+      dispatch(msg, msis->GetName());
     }
   }
 }

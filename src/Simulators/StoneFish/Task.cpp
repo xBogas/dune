@@ -531,15 +531,16 @@ namespace Simulators
         // running simulation cannot be reconfigured (the GL window in
         // particular). Rebuild the engine cleanly if any of them changes.
         if (paramChanged(m_args.scenario) || paramChanged(m_args.frequency)
-            || paramChanged(m_args.time_step) || paramChanged(m_args.auto_start) || paramChanged(m_args.auto_step)
-            || paramChanged(m_args.graphics_resolution) || paramChanged(m_args.vsync)
-            || paramChanged(m_args.rq_shadows) || paramChanged(m_args.rq_ao)
-            || paramChanged(m_args.rq_atmosphere) || paramChanged(m_args.rq_ocean)
-            || paramChanged(m_args.rq_aa) || paramChanged(m_args.rq_ssr)
-            || paramChanged(m_args.show_coord_sys) || paramChanged(m_args.show_joints)
-            || paramChanged(m_args.show_actuators) || paramChanged(m_args.show_sensors)
-            || paramChanged(m_args.show_fluid_dynamics) || paramChanged(m_args.show_ocean_velocity)
-            || paramChanged(m_args.show_forces) || paramChanged(m_args.show_bullet_debug))
+            || paramChanged(m_args.time_step) || paramChanged(m_args.auto_start)
+            || paramChanged(m_args.auto_step) || paramChanged(m_args.graphics_resolution)
+            || paramChanged(m_args.vsync) || paramChanged(m_args.rq_shadows)
+            || paramChanged(m_args.rq_ao) || paramChanged(m_args.rq_atmosphere)
+            || paramChanged(m_args.rq_ocean) || paramChanged(m_args.rq_aa)
+            || paramChanged(m_args.rq_ssr) || paramChanged(m_args.show_coord_sys)
+            || paramChanged(m_args.show_joints) || paramChanged(m_args.show_actuators)
+            || paramChanged(m_args.show_sensors) || paramChanged(m_args.show_fluid_dynamics)
+            || paramChanged(m_args.show_ocean_velocity) || paramChanged(m_args.show_forces)
+            || paramChanged(m_args.show_bullet_debug))
           requestRestart("simulation settings changed, rebuilding");
       }
 
@@ -912,7 +913,7 @@ namespace Simulators
       void
       addVehicle(sf::Robot* robot)
       {
-        const std::string name = robot->getName();
+        const std::string name = robot->GetName();
         const bool local = name == getSystemName();
         const unsigned id = local ? getSystemId() : resolveSystemName(name);
 
@@ -941,16 +942,16 @@ namespace Simulators
         // The scenario NED origin is the geodetic reference of all
         // positions dispatched by this task.
         sf::Scalar lat, lon, height;
-        sim.getNED()->Ned2Geodetic(0, 0, 0, lat, lon, height);
+        sim.GetNed()->Ned2Geodetic(0, 0, 0, lat, lon, height);
         m_origin_lat = lat;
         m_origin_lon = lon;
         m_origin_height = height;
 
-        sf::Ocean* ocean = sim.getOcean();
-        const double water_density = ocean != nullptr ? ocean->getLiquid().density : 1000.0;
+        sf::Ocean* ocean = sim.GetOcean();
+        const double water_density = ocean != nullptr ? ocean->GetLiquid().density : 1000.0;
 
-        for (unsigned i = 0; sim.getRobot(i) != nullptr; i++)
-          addVehicle(sim.getRobot(i));
+        for (unsigned i = 0; sim.GetRobot(i) != nullptr; i++)
+          addVehicle(sim.GetRobot(i));
 
         m_refused = !checkLayout();
         if (m_refused)
@@ -1034,7 +1035,7 @@ namespace Simulators
 
         SimVehicle* local = m_registry.getLocal();
         if (m_recorder.isOpen() && local != nullptr)
-          m_recorder.logStep(sim.getSimulationTime(), *local->vehicle);
+          m_recorder.logStep(sim.GetSimulationTime(), *local->vehicle);
       }
 
       //! Apply the hull body-lift and added-mass (Munk) force/moment for
@@ -1096,7 +1097,7 @@ namespace Simulators
       {
         const Vehicle::State state = sv.vehicle->getState();
 
-        if (!stateIsSane(sv, state, sim.getSimulationTime()))
+        if (!stateIsSane(sv, state, sim.GetSimulationTime()))
           return;
 
         // Not an IMC system: dispatching would mislabel the data.
@@ -1122,7 +1123,7 @@ namespace Simulators
         ss.q = state.angularVelocity.y();
         ss.r = state.angularVelocity.z();
 
-        sf::Ocean* ocean = sim.getOcean();
+        sf::Ocean* ocean = sim.GetOcean();
         if (ocean != nullptr)
         {
           const sf::Vector3 stream = ocean->GetFluidVelocity(state.position);
