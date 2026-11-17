@@ -28,6 +28,7 @@
 //***************************************************************************
 
 // C++ headers.
+#include <algorithm>
 #include <atomic>
 #include <cstdlib>
 #include <map>
@@ -462,14 +463,28 @@ namespace Simulators
         }
       }
 
+      //! Section holding a vehicle-model option: [StoneFish/Model/<system
+      //! name>] when it defines the option (a vehicle-specific fit), else
+      //! [StoneFish/Model/<General.Vehicle Type>].
+      std::string
+      modelSection(const std::string& option)
+      {
+        Parsers::Config& cfg = m_ctx.config;
+        const std::string own = "StoneFish/Model/" + std::string(getSystemName());
+        std::vector<std::string> opts = cfg.options(own);
+        if (std::find(opts.begin(), opts.end(), option) != opts.end())
+          return own;
+
+        std::string model;
+        cfg.get("General", "Vehicle Type", "lauv", model);
+        return "StoneFish/Model/" + model;
+      }
+
       void
       validateBodyLift(void)
       {
         Parsers::Config& cfg = m_ctx.config;
-
-        std::string model;
-        cfg.get("General", "Vehicle Type", "lauv", model);
-        std::string section = "StoneFish/Model/" + model;
+        std::string section = modelSection("Hull Body Lift Coefficients");
 
         bool has_bodylift =
           cfg.getList(section, "Hull Body Lift Coefficients", m_bodylift_coef.data, 8);
