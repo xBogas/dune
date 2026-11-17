@@ -28,7 +28,7 @@
 
     <include file="lauv.scn">
         <arg name="name" value="lauv-xplore-1"/>
-        <arg name="mass" value="33.0"/>
+        <arg name="mass" value="32.81"/>
         <arg name="cg_x" value="0.0795"/>
         <arg name="cg_y" value="0.0"/>
         <arg name="cg_z" value="0.009"/>
@@ -39,7 +39,7 @@
 
     <include file="lauv.scn">
         <arg name="name" value="lauv-xplore-2"/>
-        <arg name="mass" value="33.0"/>
+        <arg name="mass" value="32.81"/>
         <arg name="cg_x" value="0.0795"/>
         <arg name="cg_y" value="0.0"/>
         <arg name="cg_z" value="0.009"/>
