@@ -227,6 +227,10 @@ namespace Simulators
       bool m_bodylift;
       //! Hull body-lift coefficients, resolved from m_args.body_lift_coef.
       Vehicle::BodyLift m_bodylift_coef;
+      //! Thruster actuation map points (commanded -> applied actuation),
+      //! from the model section; empty to apply the command unchanged.
+      std::vector<double> m_thrust_map_in;
+      std::vector<double> m_thrust_map_out;
       //! Set when a parameter change requires rebuilding the running engine.
       std::atomic<bool> m_restart;
       //! Why the engine must be rebuilt.
@@ -494,6 +498,45 @@ namespace Simulators
               section.c_str());
       }
 
+      //! Load the thruster actuation map of the vehicle model: points mapping
+      //! the commanded thruster actuation to the one handed to Stonefish,
+      //! clamped outside them (e.g. a motor controller that saturates below
+      //! full scale). Absent: the command is applied unchanged.
+      void
+      validateThrustMap(void)
+      {
+        Parsers::Config& cfg = m_ctx.config;
+        std::string section = modelSection("Thruster Actuation Map - Input");
+
+        std::vector<double> in, out;
+        cfg.get(section, "Thruster Actuation Map - Input", "", in);
+        cfg.get(section, "Thruster Actuation Map - Output", "", out);
+
+        bool valid = in.size() == out.size() && (in.empty() || in.size() >= 2);
+        for (size_t i = 1; valid && i < in.size(); ++i)
+          valid = in[i] > in[i - 1];
+
+        if (!valid)
+          throw RestartNeeded("invalid 'Thruster Actuation Map' in [" + section
+                                + "]: need two equally sized lists of at least two "
+                                  "points with strictly increasing inputs",
+                              5);
+
+        m_thrust_map_in = in;
+        m_thrust_map_out = out;
+      }
+
+      //! Apply the thruster actuation map to a commanded actuation.
+      double
+      mapThrust(double value) const
+      {
+        if (m_thrust_map_in.empty())
+          return value;
+
+        value = trimValue(value, m_thrust_map_in.front(), m_thrust_map_in.back());
+        return Math::piecewiseLI(m_thrust_map_out, m_thrust_map_in, value);
+      }
+
       //! Update internal state with new parameter values.
       void
       onUpdateParameters(void)
@@ -523,6 +566,7 @@ namespace Simulators
         {
           validateGraphics();
           validateBodyLift();
+          validateThrustMap();
           validateScenario();
           return;
         }
@@ -534,6 +578,7 @@ namespace Simulators
         {
           validateGraphics();
           validateBodyLift();
+          validateThrustMap();
           validateScenario();
         }
         catch (const std::exception& e)
@@ -718,7 +763,7 @@ namespace Simulators
       {
         Vehicle* vehicle = routeVehicle(msg->getSource());
         if (vehicle != nullptr)
-          vehicle->setThrust(msg->id, msg->value);
+          vehicle->setThrust(msg->id, mapThrust(msg->value));
       }
 
       void

@@ -88,24 +88,10 @@
         <!-- Setpoints from DUNE (SetThrusterActuation) are normalized [-1, 1]. -->
         <actuator name="thruster_surge" type="thruster">
             <!-- max_setpoint is the propeller speed [rad/s] at full action 1.0
-                 (zero_order rotor: omega = setpoint). rpm = omega*30/pi.
-                 max_omega is a SEPARATE, absolute cap on the achieved rotor
-                 speed (local Stonefish patch: ZeroOrder now honors
-                 RotorDynamics::outputLimit; Thruster::setMaxOmega sets it
-                 independently of max_setpoint/setpointLimit). Without it the
-                 zero_order rotor tracks any commanded rpm exactly, so the
-                 rpm sweep's steady-u vs commanded-rpm curve grows linearly
-                 forever — no propeller thrust-coefficient tuning can bend
-                 that curve over (thrust and quadratic hull drag are both
-                 homogeneous degree-2 in (n,u), so the equilibrium u/n ratio
-                 is scale-invariant for ANY kt(J) shape). The field rpm sweep
-                 shows the real cause is a motor/ESC limit, not hydrodynamics:
-                 telemetry Rpm during xp6_1600rpm/xp6_1800rpm plateaus at the
-                 same ~1300-1400 rpm regardless of the (1600 vs 1800) command,
-                 matching the "1400" top breakpoint every LAUV variant's
-                 'Power Model -- Conversion - RPM' config uses. 146.6 rad/s =
-                 1400 rpm. -->
-            <specs max_setpoint="261.8" max_omega="146.6" inverted_setpoint="false" normalized_setpoint="true"/>
+                 (zero_order rotor: omega = setpoint). rpm = omega*30/pi. The
+                 motor/ESC saturation at 1400 rpm is applied by DUNE
+                 ('Thruster Actuation Map' in etc/common/stonefish-models.ini). -->
+            <specs max_setpoint="261.8" inverted_setpoint="false" normalized_setpoint="true"/>
             <propeller diameter="0.113" right="true">
                 <mesh filename="propeller.obj" scale="1.0"/>
                 <material name="Aluminum"/>
@@ -133,22 +119,22 @@
                  flatter than any single-coeff advance-ratio model.
                  (ktp=0.418 = old quadratic bollard kt=0.00177 at u=0.) -->
             <thrust_model type="fluid_dynamics">
-                <!-- alpha/beta decouple the kt(J)/kq(J) slope from the J=0
-                     intercept (local Stonefish patch, ActuatorDynamics.h;
-                     without the attributes the lib falls back to
-                     alpha=-forward). kt0=2.5, alpha=-3.88 keeps the same
-                     steady rpm->u map as the old 0.85/-0.85 pair (fitted to
-                     the lauv-xplore-4 800-1400 rpm band) but raises
-                     off-equilibrium thrust ~3x (bollard 25->74 N at 800 rpm,
-                     zero-thrust advance ratio J0 = kt0/|alpha| = 0.64) so
-                     low-rpm acceleration and in-turn speed recovery are no
-                     longer starved: at 800 rpm Goto2 track-separation RMS
-                     fell 14.3->8.4 m and in-turn u_min rose 0.50->0.64
-                     (field 0.68); at 1200 rpm sep RMS 5.3->2.5 m. A/B swept
-                     kt0 = 0.85/1.5/2.5 along the constant-steady-map valley;
-                     gains were monotonic up to 2.5. -->
-                <thrust_coeff forward="2.5" reverse="2.5" alpha="-3.88"/>
-                <torque_coeff value="0.125" beta="-0.194"/>
+                <!-- kt(J)/kq(J) versus advance ratio J = u/(nD); linear
+                     extrapolation outside the points:
+                       T = rho D^4 n|n| kt(J),  Q = rho D^5 n|n| kq(J).
+                     kt = 2.5 - 3.88 J: the J=0 intercept and the slope are
+                     fitted separately. The slope keeps the same steady rpm->u
+                     map as the old 0.85/-0.85 pair (lauv-xplore-4 800-1400 rpm
+                     band) while the intercept raises off-equilibrium thrust
+                     ~3x (bollard 25->74 N at 800 rpm, zero thrust at J0 =
+                     0.64), so low-rpm acceleration and in-turn speed recovery
+                     are not starved: at 800 rpm Goto2 track-separation RMS
+                     fell 14.3->8.4 m and in-turn u_min rose 0.50->0.64 (field
+                     0.68); at 1200 rpm sep RMS 5.3->2.5 m. kq = 0.125 -
+                     0.194 J (reaction roll only; the zero_order rotor ignores
+                     prop load). Measured propeller curves can replace these. -->
+                <thrust_curve advance_ratio="0 1" value="2.5 -1.38"/>
+                <torque_curve advance_ratio="0 1" value="0.125 -0.069"/>
             </thrust_model>
             <!-- Propeller mesh (propeller.obj) is extracted from lauv.STL and
                  recentered on its rotation axis, so this origin is the real
