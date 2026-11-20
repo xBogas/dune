@@ -50,12 +50,14 @@ namespace Simulators
       setBuoyancyPosition(0, 0, 0);
       std::memset(m_added_mass_coef, 0, sizeof(m_added_mass_coef));
       std::memset(m_body_lift_coef, 0, sizeof(m_body_lift_coef));
+      std::memset(m_roll_lift_coef, 0, sizeof(m_roll_lift_coef));
     }
 
     UUV::UUV(double p[3], double dimensions[3])
     {
       std::memset(m_added_mass_coef, 0, sizeof(m_added_mass_coef));
       std::memset(m_body_lift_coef, 0, sizeof(m_body_lift_coef));
+      std::memset(m_roll_lift_coef, 0, sizeof(m_roll_lift_coef));
 
       double x = 0;
       double y = 0;
@@ -99,6 +101,12 @@ namespace Simulators
       std::memcpy(m_body_lift_coef, coefs, sizeof(double) * 8);
     }
 
+
+    void
+    UUV::setRollLiftCoef(double coefs[2])
+    {
+      std::memcpy(m_roll_lift_coef, coefs, sizeof(double) * 2);
+    }
 
     void
     UUV::applyRestoringForcesMoments(void)
@@ -165,7 +173,8 @@ namespace Simulators
       zf = (m_body_lift_coef[2] * m_linear_velocity[2] +
             m_body_lift_coef[3] * m_angular_velocity[1]) * m_linear_velocity[0];
 
-      pf = 0;
+      pf = (m_roll_lift_coef[0] * m_linear_velocity[1] +
+            m_roll_lift_coef[1] * m_angular_velocity[2]) * m_linear_velocity[0];
       qf = (m_body_lift_coef[4] * m_linear_velocity[2] +
             m_body_lift_coef[5] * m_angular_velocity[1]) * m_linear_velocity[0];
       rf = (m_body_lift_coef[6] * m_linear_velocity[1] +

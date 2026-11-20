@@ -102,6 +102,11 @@ namespace Simulators
           vehicle->setBodyLiftCoef(bodylift);
         else
           return 0;
+
+        // Optional roll lift coefficients (default none).
+        double rolllift[2];
+        if (cfg.getList(section, "Roll Lift Coefficients", rolllift, 2))
+          vehicle->setRollLiftCoef(rolllift);
       }
       else if (type == "ASV")
       {
@@ -190,7 +195,14 @@ namespace Simulators
           return 0;
         }
 
-        vehicle->addForce(new Simulators::VSIM::Engine(i, force, position, orientation, eng_max_force));
+        Simulators::VSIM::Engine* engine = new Simulators::VSIM::Engine(i, force, position, orientation, eng_max_force);
+
+        // Optional propeller reaction torque (default none).
+        double torque[2];
+        if (cfg.getList(section, "Engine Torque Parameters " + idx, torque, 2))
+          engine->setTorque(torque);
+
+        vehicle->addForce(engine);
       }
 
       // Setting all forces to zero

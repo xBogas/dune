@@ -50,6 +50,15 @@ namespace Simulators
       m_act_orientation[0] = orient[0];
       m_act_orientation[1] = orient[1];
       m_engine_max_force = max_force;
+      m_torque[0] = 0;
+      m_torque[1] = 0;
+    }
+
+    void
+    Engine::setTorque(double q[2])
+    {
+      m_torque[0] = q[0];
+      m_torque[1] = q[1];
     }
 
     void
@@ -64,7 +73,8 @@ namespace Simulators
       f[0] = std::cos(m_act_orientation[0]) - std::sin(m_act_orientation[1]);
       f[1] = std::sin(m_act_orientation[0]);
       f[2] = std::sin(m_act_orientation[1]);
-      f[3] = 0;
+      // Propeller reaction torque (roll).
+      f[3] = (m_torque[0] * rps - m_torque[1] * speed) * std::fabs(rps);
       f[4] = (std::sqrt(m_act_position[0] * m_act_position[0] +
                         m_act_position[2] * m_act_position[2]) *
               std::sin(m_act_orientation[1] -
@@ -81,8 +91,9 @@ namespace Simulators
         if (std::fabs(f[i]) > m_engine_max_force)
           f[i] = m_engine_max_force * (f[i] / std::fabs(f[i]));
 
-        // Torques.
-        f[i + 3] = f[i + 3] * thruster_force;
+        // Torques (roll is already a torque).
+        if (i > 0)
+          f[i + 3] = f[i + 3] * thruster_force;
         if (std::fabs(f[i + 3]) > c_max_prop_torque)
           f[i + 3] = c_max_prop_torque * (f[i + 3] / std::fabs(f[i + 3]));
       }
@@ -99,6 +110,7 @@ namespace Simulators
       forces[0] = calc_force[0];
       forces[1] = calc_force[1];
       forces[2] = calc_force[2];
+      forces[3] = calc_force[3];
       forces[5] = calc_force[5];
     }
 

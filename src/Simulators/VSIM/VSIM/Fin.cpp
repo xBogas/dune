@@ -69,38 +69,21 @@ namespace Simulators
     }
 
     void
-    Fin::getFinProducedTorque(double f[3])
-    {
-      if (m_act >= c_max_act)
-        m_act = c_max_act;
-
-      if (m_act <= -c_max_act)
-        m_act = -c_max_act;
-
-      f[0] = (std::sqrt(std::pow(m_act_position[1], 2) + std::pow(m_act_position[2], 2)) *
-              std::fabs(m_max_force[0]) / 2 * (m_act / c_max_act));
-
-      f[1] = m_act_position[0] * std::fabs(m_max_force[1]) / 2 * (m_act / c_max_act);
-      f[2] = m_act_position[0] * std::fabs(m_max_force[2]) / 2 * (m_act / c_max_act);
-    }
-
-    void
     Fin::applyForce(double speed, double forces[6])
     {
-      double calc_force[3];
-      getFinProducedForce(calc_force);
+      double f[3];
+      getFinProducedForce(f);
 
       // The equation for the actuator is: (F = K * act * u * u).
       for (unsigned i = 0; i < 3; ++i)
-        forces[i] = speed * speed * calc_force[i];
+        forces[i] = speed * speed * f[i];
 
-      getFinProducedTorque(calc_force);
-
-      forces[3] = speed * speed * calc_force[0];
-      // Stern actuation.
-      forces[4] = speed * speed * calc_force[2];
-      // Rudder actuation.
-      forces[5] = speed * speed * calc_force[1];
+      // Moment of the fin force about the body origin (r x F). A fin off
+      // the x axis also makes a roll moment, so the roll controller acts.
+      const double* r = m_act_position;
+      forces[3] = r[1] * forces[2] - r[2] * forces[1];
+      forces[4] = r[2] * forces[0] - r[0] * forces[2];
+      forces[5] = r[0] * forces[1] - r[1] * forces[0];
     }
 
     bool

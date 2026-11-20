@@ -87,11 +87,6 @@ namespace Simulators
       void
       getFinProducedForce(double f[3]);
 
-      //! Gets fin produced torque.
-      //! @param[out] f fin produced torque.
-      void
-      getFinProducedTorque(double f[3]);
-
       //! Vehicle fin id.
       unsigned int m_id;
       //! Vehicle fin actuation.

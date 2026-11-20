@@ -78,6 +78,12 @@ namespace Simulators
       virtual void
       setBodyLiftCoef(double coefs[8]);
 
+      //! Set the hydrodynamic roll moment coefficients,
+      //! K = (coefs[0] * v + coefs[1] * r) * u.
+      //! @param[in] coefs roll lift coefficients.
+      virtual void
+      setRollLiftCoef(double coefs[2]);
+
       //! Apply Coriolis Force (and Body Lift) to the UUV
       //! Coriolis Matrices equations from:
       //! "Modeling and Simulation of the LAUV Autonomous Underwater Vehicle"
@@ -96,6 +102,8 @@ namespace Simulators
       double m_added_mass_coef[6];
       //! UUV body lift coefficient
       double m_body_lift_coef[8];
+      //! UUV roll lift coefficients.
+      double m_roll_lift_coef[2];
       //! Vehicle's volume.
       Volume* m_volume;
     };

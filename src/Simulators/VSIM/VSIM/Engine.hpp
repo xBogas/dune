@@ -79,6 +79,13 @@ namespace Simulators
         return id;
       }
 
+      //! Set the propeller reaction torque about the x axis,
+      //! K = (q[0] * n - q[1] * u) * |n|, n in rev/s, u in m/s
+      //! (same form as the thrust). Positive K rolls starboard down.
+      //! @param[in] q torque coefficients.
+      void
+      setTorque(double q[2]);
+
       //! Return vehicle actuation.
       //! @return vehicle actuation.
       double
@@ -108,6 +115,8 @@ namespace Simulators
       double m_act_orientation[2];
       //! Engine Maximum Force.
       float m_engine_max_force;
+      //! Propeller reaction torque coefficients.
+      double m_torque[2];
     };
   }
 }
