@@ -56,6 +56,8 @@ namespace Simulators
       bool limit_rate;
       //! Maximum rotation rate
       float max_rate;
+      //! First-order lag time constant (0 disables).
+      float time_constant;
       //! Flag to generate faults
       bool generate_faults;
       //! Time after which a fault will be triggered
@@ -78,6 +80,8 @@ namespace Simulators
       Random::Generator* m_prng;
       //! Last time a setservoposition message was received
       double m_last_time;
+      //! Last time the servo lag was integrated.
+      double m_last_lag_time;
       //! Fault timer counter
       double m_fault_timer;
       //! Flag to signal a fault has already been generated
@@ -108,6 +112,12 @@ namespace Simulators
         .defaultValue("333.3")
         .units(Units::DegreePerSecond)
         .description("Maximum angle attainable by the servo");
+
+        param("Time Constant", m_args.time_constant)
+        .defaultValue("0.0")
+        .units(Units::Second)
+        .minimumValue("0.0")
+        .description("Time constant of a first-order servo response (0 disables)");
 
         param("Generate Faults", m_args.generate_faults)
         .defaultValue("false")
@@ -168,12 +178,21 @@ namespace Simulators
         setEntityState(IMC::EntityState::ESTA_NORMAL, Status::CODE_ACTIVE);
 
         m_last_time = Clock::get();
+        m_last_lag_time = m_last_time;
+      }
+
+      //! Servo dynamics (rate limit and/or lag) are integrated on each
+      //! simulation step.
+      bool
+      hasDynamics(void) const
+      {
+        return m_args.limit_rate || m_args.time_constant > 0;
       }
 
       void
       consume(const IMC::SetServoPosition* msg)
       {
-        if (!m_args.limit_rate)
+        if (!hasDynamics())
         {
           m_positions[msg->id].value = trimValue(msg->value,
                                                  -m_args.max_angle,
@@ -217,18 +236,24 @@ namespace Simulators
       {
         (void)msg;
 
-        if (!m_args.limit_rate)
+        if (!hasDynamics())
           return;
 
-        float max_rot = (Clock::get() - m_last_time) * m_args.max_rate;
+        double now = Clock::get();
+        float max_rot = (now - m_last_time) * m_args.max_rate;
+        float gain = 1.0;
+        if (m_args.time_constant > 0)
+          gain = 1.0 - std::exp(-(now - m_last_lag_time) / m_args.time_constant);
+        m_last_lag_time = now;
 
         for (unsigned i = 0; i < c_servo_count; ++i)
         {
           if (m_servo_in_fault != (int)i)
           {
-            float diff = m_commands[i].value - m_positions[i].value;
+            float diff = (m_commands[i].value - m_positions[i].value) * gain;
 
-            diff = trimValue(diff, -max_rot, max_rot);
+            if (m_args.limit_rate)
+              diff = trimValue(diff, -max_rot, max_rot);
 
             m_positions[i].value += diff;
           }
