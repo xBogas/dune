@@ -103,9 +103,9 @@ namespace Simulators
 
 
     void
-    UUV::setRollLiftCoef(double coefs[2])
+    UUV::setRollLiftCoef(double coefs[3])
     {
-      std::memcpy(m_roll_lift_coef, coefs, sizeof(double) * 2);
+      std::memcpy(m_roll_lift_coef, coefs, sizeof(double) * 3);
     }
 
     void
@@ -174,7 +174,8 @@ namespace Simulators
             m_body_lift_coef[3] * m_angular_velocity[1]) * m_linear_velocity[0];
 
       pf = (m_roll_lift_coef[0] * m_linear_velocity[1] +
-            m_roll_lift_coef[1] * m_angular_velocity[2]) * m_linear_velocity[0];
+            m_roll_lift_coef[1] * m_angular_velocity[2] +
+            m_roll_lift_coef[2] * m_angular_velocity[0]) * m_linear_velocity[0];
       qf = (m_body_lift_coef[4] * m_linear_velocity[2] +
             m_body_lift_coef[5] * m_angular_velocity[1]) * m_linear_velocity[0];
       rf = (m_body_lift_coef[6] * m_linear_velocity[1] +

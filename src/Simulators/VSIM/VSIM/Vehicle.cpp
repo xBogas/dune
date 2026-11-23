@@ -141,7 +141,7 @@ namespace Simulators
     }
 
     void
-    Vehicle::setRollLiftCoef(double coefs[2])
+    Vehicle::setRollLiftCoef(double coefs[3])
     {
       // do nothing.
       (void)coefs;

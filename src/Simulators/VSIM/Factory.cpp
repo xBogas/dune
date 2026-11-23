@@ -103,9 +103,11 @@ namespace Simulators
         else
           return 0;
 
-        // Optional roll lift coefficients (default none).
-        double rolllift[2];
-        if (cfg.getList(section, "Roll Lift Coefficients", rolllift, 2))
+        // Optional roll lift coefficients K_uv, K_ur and K_up (default
+        // none); K_up may be left out.
+        double rolllift[3] = {0, 0, 0};
+        if (cfg.getList(section, "Roll Lift Coefficients", rolllift, 3) ||
+            cfg.getList(section, "Roll Lift Coefficients", rolllift, 2))
           vehicle->setRollLiftCoef(rolllift);
       }
       else if (type == "ASV")

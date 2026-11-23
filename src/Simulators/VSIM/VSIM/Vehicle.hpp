@@ -109,7 +109,7 @@ namespace Simulators
       //! Set roll lift coefficients (UUV only).
       //! @param[in] coefs roll lift coefficients.
       virtual void
-      setRollLiftCoef(double coefs[2]);
+      setRollLiftCoef(double coefs[3]);
 
       //! Engines/Fins vector.
       std::list<Force*> m_vehicle_forces;

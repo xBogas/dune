@@ -79,10 +79,11 @@ namespace Simulators
       setBodyLiftCoef(double coefs[8]);
 
       //! Set the hydrodynamic roll moment coefficients,
-      //! K = (coefs[0] * v + coefs[1] * r) * u.
+      //! K = (coefs[0] * v + coefs[1] * r + coefs[2] * p) * u.
+      //! The p term is the speed-dependent roll damping of the fins.
       //! @param[in] coefs roll lift coefficients.
       virtual void
-      setRollLiftCoef(double coefs[2]);
+      setRollLiftCoef(double coefs[3]);
 
       //! Apply Coriolis Force (and Body Lift) to the UUV
       //! Coriolis Matrices equations from:
@@ -103,7 +104,7 @@ namespace Simulators
       //! UUV body lift coefficient
       double m_body_lift_coef[8];
       //! UUV roll lift coefficients.
-      double m_roll_lift_coef[2];
+      double m_roll_lift_coef[3];
       //! Vehicle's volume.
       Volume* m_volume;
     };
