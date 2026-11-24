@@ -105,7 +105,7 @@ namespace Simulators
 
         param("Stream Velocity Source", m_args.type)
             .defaultValue("Constant")
-            .values("Constant, Sinusoidal, Gridded 2D Model Data")
+            .values("Constant, Sinusoidal, Gridded 2D Model Data, Time Series")
             .description("Source of the stream speed values.");
 
         param("Default Speed North", m_args.default_wx)

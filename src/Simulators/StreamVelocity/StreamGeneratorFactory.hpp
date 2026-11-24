@@ -37,6 +37,7 @@
 #include "ModelDataStreamGenerator.hpp"
 #include "StreamGenerator.hpp"
 #include "SinusoidalStreamGenerator.hpp"
+#include "TimeSeriesStreamGenerator.hpp"
 
 namespace Simulators
 {
@@ -81,6 +82,9 @@ namespace Simulators
           return std::make_unique<SinusoidalStreamGenerator>(
                  config.sinusoidal_amplitude, config.sinusoidal_period, config.sinusoidal_phase, config.sinusoidal_slope);
         }
+
+        if (config.type == "Time Series")
+          return std::make_unique<TimeSeriesStreamGenerator>(config.filename);
 
         throw std::runtime_error(DTR("Unknown stream velocity source type."));
       }
