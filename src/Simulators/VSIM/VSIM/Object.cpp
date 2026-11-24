@@ -41,7 +41,8 @@ namespace Simulators
 {
   namespace VSIM
   {
-    Object::Object(void)
+    Object::Object(void):
+      m_integration_method(IM_EULER)
     {
       std::memset(m_inertia, 0, sizeof(m_inertia));
       std::memset(m_linear_drag_coef, 0, sizeof(m_linear_drag_coef));
@@ -165,9 +166,32 @@ namespace Simulators
     }
 
     void
-    Object::update(double ts)
+    Object::getState(double x[c_state_size]) const
     {
-      // Initialize variables.
+      for (unsigned i = 0; i < 3; ++i)
+      {
+        x[i] = m_position[i];
+        x[i + 3] = m_orientation[i];
+        x[i + 6] = m_linear_velocity[i];
+        x[i + 9] = m_angular_velocity[i];
+      }
+    }
+
+    void
+    Object::setState(const double x[c_state_size])
+    {
+      for (unsigned i = 0; i < 3; ++i)
+      {
+        m_position[i] = x[i];
+        m_orientation[i] = x[i + 3];
+        m_linear_velocity[i] = x[i + 6];
+        m_angular_velocity[i] = x[i + 9];
+      }
+    }
+
+    void
+    Object::derivatives(double dx[c_state_size]) const
+    {
       double c1 = std::cos(m_orientation[0]);
       double c2 = std::cos(m_orientation[1]);
       double c3 = std::cos(m_orientation[2]);
@@ -185,52 +209,97 @@ namespace Simulators
       double q = m_angular_velocity[1];
       double r = m_angular_velocity[2];
 
-      double d_pos[6];
-      double d_vel[6];
-
-      // Accelerations.
-      for (unsigned i = 0; i < 6; ++i)
-        d_vel[i] = m_forces[i] / m_inertia[i];
-
-      // Reset forces to zero.
-      resetForces();
-
-      // Compute Velocities
       // Transformation Matrix: eta1dot = J1(eta2)*nu1
       //    J1=[ c3*c2   c3*s2*s1-s3*c1  s3*s1+c3*c1*s2
       //         s3*c2   c1*c3+s1*s2*s3  c1*s2*s3-c3*s1
       //          -s2        c2*s1           c1*c2     ];
-      d_pos[0] = (c3 * c2) * u + (c3 * s2 * s1 - s3 * c1) * v + (s3 * s1 + c3 * c1 * s2) * w;
-      d_pos[1] = (s3 * c2) * u + (c1 * c3 + s1 * s2 * s3) * v + (c1 * s2 * s3 - c3 * s1) * w;
-      d_pos[2] = (-s2) * u + (c2 * s1) * v + (c1 * c2) * w;
+      dx[0] = (c3 * c2) * u + (c3 * s2 * s1 - s3 * c1) * v + (s3 * s1 + c3 * c1 * s2) * w;
+      dx[1] = (s3 * c2) * u + (c1 * c3 + s1 * s2 * s3) * v + (c1 * s2 * s3 - c3 * s1) * w;
+      dx[2] = (-s2) * u + (c2 * s1) * v + (c1 * c2) * w;
 
-      // Transformation Matrix: eta2dot = J1(eta2)*nu2
+      // Transformation Matrix: eta2dot = J2(eta2)*nu2
       //   J2=[ 1   s1*t2   c1*t2
       //        0    c1      -s1
       //        0   s1/c2   c1/c2 ];
-      d_pos[3] = p + (s1 * t2) * q + (c1 * t2) * r;
-      d_pos[4] = c1 * q + (-s1) * r;
-      d_pos[5] = (s1 / c2) * q + (c1 / c2) * r;
+      dx[3] = p + (s1 * t2) * q + (c1 * t2) * r;
+      dx[4] = c1 * q + (-s1) * r;
+      dx[5] = (s1 / c2) * q + (c1 / c2) * r;
+
+      // Accelerations.
+      for (unsigned i = 0; i < 6; ++i)
+        dx[i + 6] = m_forces[i] / m_inertia[i];
+    }
+
+    void
+    Object::update(double ts)
+    {
+      double dx[c_state_size];
+      derivatives(dx);
+
+      // Reset forces to zero.
+      resetForces();
 
       // Integrate using Euler's method.
       for (unsigned i = 0; i < 3; i++)
       {
-        m_position[i] += d_pos[i] * ts;
+        m_position[i] += dx[i] * ts;
         m_orientation[i] += Angles::minSignedAngle(m_orientation[i],
-                                                   m_orientation[i] + d_pos[i + 3] * ts);
+                                                   m_orientation[i] + dx[i + 3] * ts);
 
-        if (m_integration_method)
-        {
-          m_linear_velocity[i] += d_vel[i] * ts;
-          m_angular_velocity[i] = m_angular_velocity[i] + d_vel[i + 3] * ts;
-        }
-        else
-        {
-          // ASV integration.
-          m_linear_velocity[i] = d_vel[i];
-          m_angular_velocity[i] = d_vel[i + 3];
-        }
+        m_linear_velocity[i] += dx[i + 6] * ts;
+        m_angular_velocity[i] += dx[i + 9] * ts;
       }
+
+      if (m_position[2] <= 0.0)
+        m_position[2] = 0.0;
+    }
+
+    void
+    Object::step(double ts)
+    {
+      if (m_integration_method != IM_RK4)
+      {
+        applyForces();
+        update(ts);
+        return;
+      }
+
+      // Forces added before the step (external) hold over all stages.
+      double external[6];
+      std::memcpy(external, m_forces, sizeof(external));
+
+      double x0[c_state_size];
+      getState(x0);
+
+      // Classic fourth-order Runge-Kutta.
+      static const double c_stage[4] = {0.0, 0.5, 0.5, 1.0};
+      static const double c_weight[4] = {1.0, 2.0, 2.0, 1.0};
+      double k[c_state_size];
+      double x[c_state_size];
+      double sum[c_state_size] = {0.0};
+
+      for (unsigned s = 0; s < 4; ++s)
+      {
+        if (s > 0)
+        {
+          for (unsigned i = 0; i < c_state_size; ++i)
+            x[i] = x0[i] + c_stage[s] * ts * k[i];
+          setState(x);
+        }
+
+        std::memcpy(m_forces, external, sizeof(external));
+        applyForces();
+        derivatives(k);
+
+        for (unsigned i = 0; i < c_state_size; ++i)
+          sum[i] += c_weight[s] * k[i];
+      }
+
+      for (unsigned i = 0; i < c_state_size; ++i)
+        x[i] = x0[i] + ts / 6.0 * sum[i];
+      setState(x);
+
+      resetForces();
 
       if (m_position[2] <= 0.0)
         m_position[2] = 0.0;

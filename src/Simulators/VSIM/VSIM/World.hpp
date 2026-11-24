@@ -83,14 +83,6 @@ namespace Simulators
       takeStep(void);
 
     private:
-      //! Applies forces to all objects/vehicles.
-      void
-      applyForces(void);
-
-      //! Fetches all objects and vehicles data from simulator.
-      void
-      update(void);
-
       //! Set world's gravity.
       //! @param[in] x set world gravity in the x-axis.
       //! @param[in] y set world gravity in the y-axis.

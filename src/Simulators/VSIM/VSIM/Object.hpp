@@ -53,6 +53,15 @@ namespace Simulators
         UGV
       };
 
+      //! Integration method.
+      enum IntegrationMethod
+      {
+        //! Euler.
+        IM_EULER,
+        //! Fourth-order Runge-Kutta.
+        IM_RK4
+      };
+
       //! Constructor.
       Object(void);
 
@@ -77,10 +86,10 @@ namespace Simulators
       void
       setQuadraticDragCoef(double coefs[10]);
 
-      //! Define integration method to be applied in update() function.
+      //! Define integration method to be applied in step().
       //! @param[in] method integration method.
       void
-      setIntegrationMethod(bool method)
+      setIntegrationMethod(IntegrationMethod method)
       {
         m_integration_method = method;
       }
@@ -164,6 +173,14 @@ namespace Simulators
       void
       update(double timestep);
 
+      //! Advance the object one timestep with the integration method.
+      //! With RK4 the forces are evaluated at every stage, with
+      //! the forces added before the call (external) and the actuator
+      //! commands held over the step.
+      //! @param[in] timestep integration timestep.
+      void
+      step(double timestep);
+
     protected:
       //! Object's mass.
       double m_mass;
@@ -179,6 +196,25 @@ namespace Simulators
       double m_angular_velocity[3];
 
     private:
+      //! Size of the integrated state: position, orientation, linear and
+      //! angular velocity.
+      static const unsigned c_state_size = 12;
+
+      //! Copy the integrated state out of the object.
+      //! @param[out] x state.
+      void
+      getState(double x[c_state_size]) const;
+
+      //! Set the integrated state of the object.
+      //! @param[in] x state.
+      void
+      setState(const double x[c_state_size]);
+
+      //! State derivative for the current state and the forces in m_forces.
+      //! @param[out] dx state derivative.
+      void
+      derivatives(double dx[c_state_size]) const;
+
       //! Object id.
       int m_body_id;
       //! Object type.
@@ -189,8 +225,8 @@ namespace Simulators
       double m_linear_drag_coef[10];
       //! Forces acting on the vehicle. (body-fixed reference frame)
       double m_forces[6];
-      //! Velocity Integration Method (true = regular)
-      bool m_integration_method;
+      //! Integration method.
+      IntegrationMethod m_integration_method;
     };
   }
 }

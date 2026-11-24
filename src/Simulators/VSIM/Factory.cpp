@@ -148,12 +148,13 @@ namespace Simulators
       else
         return 0;
 
-      // Velocity integration method
-      // true: uses regular method.
-      // false: swordfish.
-      bool intMethod;
-      cfg.get(section, "Integration Method", "true", intMethod);
-      vehicle->setIntegrationMethod(intMethod);
+      // Integration method.
+      std::string method;
+      cfg.get(section, "Integration Method", "Euler", method);
+      if (method == "RK4")
+        vehicle->setIntegrationMethod(Object::IM_RK4);
+      else if (method != "Euler")
+        DUNE_WRN("VSIM", "invalid integration method '" << method << "', using Euler");
 
       double force[3];
       double position[3];

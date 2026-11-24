@@ -68,37 +68,15 @@ namespace Simulators
     }
 
     void
-    World::applyForces(void)
-    {
-      std::list<Object*>::iterator oitr = m_objects.begin();
-      for (; oitr != m_objects.end(); ++oitr)
-        (*oitr)->applyForces();
-
-      std::list<Vehicle*>::iterator vitr = m_vehicles.begin();
-      for (; vitr != m_vehicles.end(); ++vitr)
-        (*vitr)->applyForces();
-    }
-
-    void
-    World::update(void)
-    {
-      std::list<Object*>::iterator oitr = m_objects.begin();
-      for (; oitr != m_objects.end(); ++oitr)
-        (*oitr)->update(m_timestep);
-
-      std::list<Vehicle*>::iterator vitr = m_vehicles.begin();
-      for (; vitr != m_vehicles.end(); ++vitr)
-        (*vitr)->update(m_timestep);
-    }
-
-    void
     World::takeStep(void)
     {
-      // Apply forces to vehicle.
-      applyForces();
+      std::list<Object*>::iterator oitr = m_objects.begin();
+      for (; oitr != m_objects.end(); ++oitr)
+        (*oitr)->step(m_timestep);
 
-      // Update vehicle state.
-      update();
+      std::list<Vehicle*>::iterator vitr = m_vehicles.begin();
+      for (; vitr != m_vehicles.end(); ++vitr)
+        (*vitr)->step(m_timestep);
     }
   }
 }
