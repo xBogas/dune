@@ -67,6 +67,8 @@ namespace Simulators
       std::string svlabel;
       //! Simulation time multiplier
       double time_multiplier;
+      //! External pitch moment.
+      double pitch_moment;
     };
 
     //! Simulator task.
@@ -102,6 +104,12 @@ namespace Simulators
 
         param("Entity Label - Stream Velocity Source", m_args.svlabel)
         .description("Entity label of the stream velocity source.");
+
+        param("Pitch Moment Disturbance", m_args.pitch_moment)
+        .defaultValue("0.0")
+        .units(Units::NewtonMeter)
+        .description("External pitch moment (body y axis, positive nose up) added at every step."
+                     " Changing it at run time models a trim or buoyancy change");
 
         // Register handler routines.
         bind<IMC::GpsFix>(this);
@@ -227,6 +235,9 @@ namespace Simulators
       {
         if (!isActive())
           return;
+
+        if (m_args.pitch_moment != 0.0)
+          m_vehicle->addForces(0.0, 0.0, 0.0, 0.0, m_args.pitch_moment, 0.0);
 
         m_world->takeStep();
 
